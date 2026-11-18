@@ -170,12 +170,31 @@ def pago_desde_texto(texto, exigir_contexto=False):
 
 
 # ---------------------------------------------------------------- fuentes
+def varias(consultas, json_esperado=True):
+    """Pide varias URLs de una misma fuente. Si una falla, sigue con las demás;
+    solo marca la fuente con error si fallan todas."""
+    ok, ultimo = [], None
+    for nombre, url in consultas:
+        try:
+            ok.append(pedir(url, nombre, json_esperado=json_esperado))
+        except FileNotFoundError:
+            continue
+        except Exception as e:  # noqa: BLE001
+            ultimo = e
+            print("Consulta con error:", url, e, file=sys.stderr)
+    if not ok and ultimo:
+        raise ultimo
+    return ok
+
+
 def fuente_remotive():
-    """Remotive pide máximo 4 consultas al día y mencionar la fuente. Hacemos 2."""
+    """Remotive pide máximo 4 consultas al día y mencionar la fuente. Hacemos 4."""
     vistos = {}
-    for nombre, url in (("remotive-cs.json", "https://remotive.com/api/remote-jobs?category=customer-support"),
-                        ("remotive-data.json", "https://remotive.com/api/remote-jobs?search=data%20entry")):
-        data = pedir(url, nombre)
+    consultas = (("remotive-cs.json", "https://remotive.com/api/remote-jobs?category=customer-support"),
+                 ("remotive-data.json", "https://remotive.com/api/remote-jobs?search=data%20entry"),
+                 ("remotive-assistant.json", "https://remotive.com/api/remote-jobs?search=assistant"),
+                 ("remotive-processing.json", "https://remotive.com/api/remote-jobs?search=processing"))
+    for data in varias(consultas):
         for j in data.get("jobs", []):
             vistos[j.get("id")] = {
                 "fuente": "Remotive",
@@ -194,7 +213,7 @@ def fuente_remotive():
 
 def fuente_himalayas(busquedas):
     vistos = {}
-    for i, q in enumerate(busquedas[:6]):
+    for i, q in enumerate(busquedas):
         params = urllib.parse.urlencode({"q": q, "country": "DO", "sort": "recent"})
         try:
             data = pedir("https://himalayas.app/jobs/api/search?" + params, "himalayas-%d.json" % i)
@@ -232,12 +251,11 @@ def fuente_himalayas(busquedas):
 
 def fuente_jobicy():
     out = []
-    for nombre, url in (("jobicy-supporting.json", "https://jobicy.com/api/v2/remote-jobs?count=100&industry=supporting"),
-                        ("jobicy-latam.json", "https://jobicy.com/api/v2/remote-jobs?count=100&geo=latam")):
-        try:
-            data = pedir(url, nombre)
-        except FileNotFoundError:
-            continue
+    consultas = (("jobicy-supporting.json", "https://jobicy.com/api/v2/remote-jobs?count=100&industry=supporting"),
+                 ("jobicy-latam.json", "https://jobicy.com/api/v2/remote-jobs?count=100&geo=latam"),
+                 ("jobicy-dataentry.json", "https://jobicy.com/api/v2/remote-jobs?count=100&tag=data%20entry"),
+                 ("jobicy-backoffice.json", "https://jobicy.com/api/v2/remote-jobs?count=100&tag=back%20office"))
+    for data in varias(consultas):
         for j in data.get("jobs", []):
             moneda = j.get("salaryCurrency") or ""
             periodo = j.get("salaryPeriod") or "annual"
@@ -284,12 +302,9 @@ def fuente_remoteok():
 
 def fuente_wwr():
     out = []
-    for nombre, url in (("wwr-cs.xml", "https://weworkremotely.com/categories/remote-customer-support-jobs.rss"),
-                        ("wwr-otros.xml", "https://weworkremotely.com/categories/all-other-remote-jobs.rss")):
-        try:
-            xml = pedir(url, nombre, json_esperado=False)
-        except FileNotFoundError:
-            continue
+    consultas = (("wwr-cs.xml", "https://weworkremotely.com/categories/remote-customer-support-jobs.rss"),
+                 ("wwr-otros.xml", "https://weworkremotely.com/categories/all-other-remote-jobs.rss"))
+    for xml in varias(consultas, json_esperado=False):
         raiz = ET.fromstring(xml)
         for it in raiz.iter("item"):
             titulo = it.findtext("title") or ""
@@ -316,7 +331,9 @@ def fuente_workingnomads():
     out = []
     for j in data if isinstance(data, list) else []:
         cat = norm(j.get("category_name"))
-        if not any(c in cat for c in ("customer", "support", "administration", "admin", "operations", "data")):
+        if not any(c in cat for c in ("customer", "support", "administration", "admin", "operations", "data",
+                                      "finance", "accounting", "legal", "health", "medical", "commerce",
+                                      "translation", "writing", "other")):
             continue
         out.append({
             "fuente": "Working Nomads",
@@ -380,6 +397,9 @@ def evaluar(v, perfil, comunes):
 
     # país
     pais_no = contiene(" " + ubic + " " + texto + " ", comunes["pais_no"])
+    # frases como "US-based" solo cuentan en la ubicación: en la descripción suelen
+    # referirse a los clientes ("supporting US-based clients"), no al candidato
+    pais_no += contiene(" " + ubic + " ", comunes.get("pais_no_ubicacion", []))
     pais_si = contiene(ubic, comunes["pais_si"]) or (["worldwide"] if not ubic else [])
     if pais_no:
         filtro.append(regla("Acepta RD", "no cumple", "Dice: " + pais_no[0]))
@@ -466,11 +486,14 @@ def main():
     with open(CONFIG, encoding="utf-8") as f:
         cfg = json.load(f)
     comunes, perfiles = cfg["comunes"], cfg["perfiles"]
+    # intercala las búsquedas de cada perfil para que todos tengan turno
     busquedas = []
-    for p in perfiles.values():
-        for q in p.get("busquedas", []):
-            if q not in busquedas:
-                busquedas.append(q)
+    listas = [p.get("busquedas", []) for p in perfiles.values()]
+    for i in range(max([len(x) for x in listas] + [0])):
+        for lista_p in listas:
+            if i < len(lista_p) and lista_p[i] not in busquedas:
+                busquedas.append(lista_p[i])
+    busquedas = busquedas[:comunes.get("max_busquedas", 26)]
 
     fuentes = {
         "Remotive": fuente_remotive,
