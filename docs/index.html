@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radar de Empleo</title>
+<meta name="theme-color" content="#0E6656">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Plan: herramienta de trabajo diario. Tinta verde-petróleo sobre papel frío, ámbar solo para marcar lo urgente.
+   Layout: barra superior con perfil + pestañas; cada vista es lista a la izquierda y detalle a la derecha (una columna en móvil). */
+:root{
+  --bg:#F2F4F3; --surface:#FFFFFF; --surface-2:#F7F9F8; --ink:#15211F; --muted:#5A6965; --line:#D7DEDB;
+  --accent:#0E6656; --accent-ink:#FFFFFF; --accent-soft:#DFEFEA; --mark:#C98A00; --mark-soft:#FBF1D8;
+  --ok:#1C7548; --ok-soft:#E1F2E8; --warn:#9C5A00; --warn-soft:#FAEED6; --bad:#A92E27; --bad-soft:#F8E1DF;
+  --paper:#FFFFFF; --paper-ink:#1B1B1B;
+  --font-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius:10px; --shadow:0 1px 2px rgba(20,33,31,.06), 0 4px 14px rgba(20,33,31,.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1614; --surface:#162120; --surface-2:#1B2826; --ink:#E6EEEB; --muted:#9AAEA8; --line:#2B3B38;
+    --accent:#4FC2A7; --accent-ink:#06201A; --accent-soft:#1D3A33; --mark:#E7B13A; --mark-soft:#3A2F12;
+    --ok:#5FCB91; --ok-soft:#173326; --warn:#E9A848; --warn-soft:#3A2A10; --bad:#F0857D; --bad-soft:#3D1B19;
+    --paper:#FDFDFC; --paper-ink:#1B1B1B; --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1614; --surface:#162120; --surface-2:#1B2826; --ink:#E6EEEB; --muted:#9AAEA8; --line:#2B3B38;
+  --accent:#4FC2A7; --accent-ink:#06201A; --accent-soft:#1D3A33; --mark:#E7B13A; --mark-soft:#3A2F12;
+  --ok:#5FCB91; --ok-soft:#173326; --warn:#E9A848; --warn-soft:#3A2A10; --bad:#F0857D; --bad-soft:#3D1B19;
+  --paper:#FDFDFC; --paper-ink:#1B1B1B; --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:15px; line-height:1.5}
+h1,h2,h3{font-family:var(--font-display); text-wrap:balance; margin:0; line-height:1.2}
+button,input,select,textarea{font:inherit; color:inherit}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.top{position:sticky; top:0; z-index:5; background:var(--surface); border-bottom:1px solid var(--line)}
+.top-row{display:flex; align-items:center; gap:16px; padding:12px 20px; flex-wrap:wrap}
+.brand{display:flex; align-items:baseline; gap:10px; margin-right:auto}
+.brand h1{font-size:21px; letter-spacing:-.01em}
+.brand small{color:var(--muted); font-size:13px}
+.who{display:flex; background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:3px}
+.who button{border:0; background:transparent; padding:6px 16px; border-radius:999px; cursor:pointer; font-weight:700}
+.who button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink)}
+.tabs{display:flex; gap:4px; padding:0 14px; overflow-x:auto; scrollbar-width:thin}
+.tabs button{border:0; background:none; padding:10px 12px 11px; cursor:pointer; color:var(--muted); font-weight:700; white-space:nowrap; border-bottom:3px solid transparent}
+.tabs button[aria-current="page"]{color:var(--ink); border-bottom-color:var(--accent)}
+main{padding:20px; max-width:1320px; margin:0 auto; display:flex; flex-direction:column; gap:18px}
+.banner{margin:12px 20px 0; padding:10px 14px; border-radius:var(--radius); background:var(--mark-soft); color:var(--ink); border:1px solid var(--line); font-size:14px}
+.banner.bad{background:var(--bad-soft)}
+.card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow)}
+.pad{padding:16px 18px}
+.tiles{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px}
+.tile{padding:14px 16px; text-align:left; cursor:pointer; border:1px solid var(--line); background:var(--surface); border-radius:var(--radius)}
+.tile[aria-pressed="true"]{border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent)}
+.tile .lbl{color:var(--muted); font-size:13px}
+.tile .num{font-family:var(--font-display); font-size:30px; font-weight:700; font-variant-numeric:tabular-nums}
+.n-ok{color:var(--ok)} .n-warn{color:var(--warn)} .n-bad{color:var(--bad)} .n-acc{color:var(--accent)}
+.split{display:grid; grid-template-columns:minmax(280px,400px) minmax(0,1fr); gap:16px; align-items:start}
+.list{display:flex; flex-direction:column; gap:8px; max-height:calc(100vh - 260px); overflow:auto; padding-right:4px}
+.item{display:block; width:100%; text-align:left; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:12px 14px; cursor:pointer}
+.item:hover{border-color:var(--muted)}
+.item[aria-current="true"]{border-color:var(--accent); box-shadow:inset 3px 0 0 var(--accent)}
+.item .t{font-weight:700; display:block}
+.item .s{color:var(--muted); font-size:13.5px; display:block}
+.row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+.between{justify-content:space-between}
+.stack{display:flex; flex-direction:column; gap:12px}
+.pill{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:2px 9px; border-radius:999px; border:1px solid transparent; white-space:nowrap}
+.p-ok{background:var(--ok-soft); color:var(--ok)} .p-warn{background:var(--warn-soft); color:var(--warn)} .p-bad{background:var(--bad-soft); color:var(--bad)}
+.p-acc{background:var(--accent-soft); color:var(--accent)} .p-mut{background:var(--surface-2); color:var(--muted); border-color:var(--line)}
+.tag{font-family:var(--font-mono); font-size:11.5px; letter-spacing:.04em; color:var(--muted)}
+.btn{display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--surface); cursor:pointer; font-weight:700; font-size:14px; text-decoration:none; color:var(--ink)}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.btn.danger{color:var(--bad)}
+.btn.small{padding:5px 10px; font-size:13px}
+.btn[disabled]{opacity:.5; cursor:not-allowed}
+.chips{display:flex; gap:6px; flex-wrap:wrap}
+.chip{border:1px solid var(--line); background:var(--surface); padding:5px 12px; border-radius:999px; cursor:pointer; font-size:13.5px; font-weight:700; color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--ink); color:var(--surface); border-color:var(--ink)}
+label.f{display:flex; flex-direction:column; gap:4px; font-size:13px; font-weight:700; color:var(--muted)}
+input[type=text],input[type=number],input[type=search],input[type=url],select,textarea{border:1px solid var(--line); background:var(--surface-2); border-radius:8px; padding:8px 10px; width:100%; color:var(--ink); font-weight:400; font-size:14.5px}
+textarea{min-height:90px; resize:vertical; line-height:1.45}
+textarea.code{font-family:var(--font-mono); font-size:13px; min-height:420px}
+.check{display:flex; gap:8px; align-items:flex-start; font-size:14px; color:var(--ink); font-weight:400}
+.check input{margin-top:3px}
+.ficha{display:grid; grid-template-columns:200px minmax(0,1fr); border-top:1px solid var(--line); margin:0}
+.ficha dt,.ficha dd{padding:9px 0; border-bottom:1px solid var(--line); margin:0}
+.ficha dt{font-family:var(--font-mono); font-size:12px; color:var(--muted)}
+.ficha dt span{display:inline-block; width:26px}
+.ficha dd{font-size:14.5px; white-space:pre-wrap; overflow-wrap:anywhere}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.out{white-space:pre-wrap; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:12px 14px; font-size:14.5px; overflow-wrap:anywhere}
+.out:empty{display:none}
+.live{white-space:pre-wrap; color:var(--muted); font-size:14px}
+.empty{padding:28px; text-align:center; color:var(--muted); border:1px dashed var(--line); border-radius:var(--radius)}
+.paper{background:var(--paper); color:var(--paper-ink); border:1px solid var(--line); border-radius:6px; padding:34px 40px; font-family:Calibri, "Carlito", "Segoe UI", Arial, sans-serif; font-size:13.5px; line-height:1.4; max-width:820px}
+.paper .nm{font-size:24px; font-weight:700; margin-bottom:2px}
+.paper .hd{color:#4a4a4a; font-size:12.5px}
+.paper .h2{font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#1F3A36; border-bottom:1px solid #bbb; margin:16px 0 6px; padding-bottom:2px; font-size:13px}
+.paper .h3{font-weight:700; margin-top:9px}
+.paper .meta{font-style:italic; color:#555; font-size:12.5px}
+.paper ul{margin:3px 0 4px; padding-left:20px}
+.paper li{margin:2px 0}
+.paper p{margin:3px 0}
+.steps{display:grid; gap:14px}
+.step h3{font-size:17px}
+.step .num{font-family:var(--font-mono); color:var(--accent); font-size:12px; letter-spacing:.06em}
+.board{display:grid; grid-template-columns:repeat(5,minmax(170px,1fr)); gap:10px; overflow-x:auto}
+.col{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius); padding:10px; display:flex; flex-direction:column; gap:8px; min-height:120px}
+.col h3{font-size:14px; display:flex; justify-content:space-between}
+.chat{display:flex; flex-direction:column; gap:10px; max-height:58vh; overflow:auto; padding:4px}
+.msg{padding:10px 13px; border-radius:10px; white-space:pre-wrap; overflow-wrap:anywhere; max-width:92%}
+.msg.u{background:var(--accent-soft); align-self:flex-end}
+.msg.a{background:var(--surface-2); border:1px solid var(--line); align-self:flex-start}
+.thumbs{display:flex; gap:8px; flex-wrap:wrap}
+.thumbs figure{margin:0; position:relative}
+.thumbs img{width:96px; height:72px; object-fit:cover; border-radius:6px; border:1px solid var(--line); display:block}
+.thumbs button{position:absolute; top:-6px; right:-6px; border-radius:999px; width:22px; height:22px; border:1px solid var(--line); background:var(--surface); cursor:pointer; font-size:12px; line-height:1}
+.note{border-left:3px solid var(--mark); background:var(--mark-soft); padding:9px 12px; border-radius:0 8px 8px 0; font-size:13.5px}
+.grid2{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px}
+details summary{cursor:pointer; font-weight:700}
+.modal-back{position:fixed; inset:0; background:rgba(10,16,15,.45); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; z-index:20; overflow:auto}
+.modal{width:min(760px,100%); background:var(--surface); border-radius:12px; border:1px solid var(--line); padding:20px; display:flex; flex-direction:column; gap:14px}
+.toast{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:var(--surface); padding:10px 16px; border-radius:10px; z-index:30; max-width:min(560px,92vw); font-size:14px; box-shadow:var(--shadow)}
+.toast.bad{background:var(--bad); color:#fff}
+@media (max-width: 980px){ .split{grid-template-columns:1fr} .list{max-height:none} .board{grid-template-columns:repeat(5,minmax(200px,1fr))} }
+@media (max-width: 640px){ main{padding:14px} .tiles{grid-template-columns:repeat(2,minmax(0,1fr))} .ficha{grid-template-columns:1fr} .ficha dt{border-bottom:0; padding-bottom:0} .grid2{grid-template-columns:1fr} .paper{padding:20px} .top-row{padding:10px 14px} }
+@media (prefers-reduced-motion: reduce){ *{transition:none!important; animation:none!important} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+'use strict';
+/* ---------- Constantes ---------- */
+const PERFILES=[{id:'luz',nombre:'Luz'},{id:'cristian',nombre:'Cristian'}];
+const ESTADOS={verificada:'Verificada y abierta',pendiente:'Pendiente de verificar',excluida:'Excluida'};
+const ESTADO_PILL={verificada:'p-ok',pendiente:'p-warn',excluida:'p-bad'};
+const ETAPAS=[['por_revisar','Por revisar'],['preparando','Preparando postulación'],['postulada','Postulada'],['evaluacion','Evaluación'],['entrevista','Entrevista'],['oferta','Oferta'],['rechazada','Rechazada'],['descartada','Descartada']];
+const ETAPA_LBL=Object.fromEntries(ETAPAS);
+const EN_PROCESO=['postulada','evaluacion','entrevista','oferta'];
+const TABS=[['vacantes','Vacantes'],['postular','Postular'],['cvs','Mis CVs'],['evaluaciones','Evaluaciones'],['reclutamiento','Reclutamiento'],['perfil','Ajustes']];
+const CAMPOS=[['puesto','Puesto'],['empresa','Empresa'],['estado','Estado'],['url','Enlace original'],['fuente','Dónde se encontró'],['elegibilidad','Elegibilidad desde RD'],['modalidad','Modalidad'],['canal','Canal (voz / no-voz)'],['carga','Carga laboral'],['pago','Pago publicado'],['pagoHora','Equivalente por hora'],['contrato','Contrato y jornada'],['horarioRD','Horario (hora RD)'],['funciones','Funciones'],['requisitos','Requisitos'],['brechas','Lo que no cumples'],['encaje','Por qué encaja'],['linkedin','Postulantes en LinkedIn'],['fechas','Publicada / fecha límite'],['verificacion','Verificación']];
+const DOCX_URL='https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js';
+const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+const HONESTIDAD='REGLA DE ORO: usa solo hechos que aparecen en el CV o en DATOS VERDADEROS. No inventes empresas, cargos, fechas, cifras, herramientas, certificaciones, títulos ni idiomas, ni exageres niveles. Puedes reordenar, resumir, cambiar el énfasis y usar las palabras de la vacante solo cuando describan algo que la persona realmente hizo. Si la vacante pide algo que no tiene, no lo agregues: anótalo como brecha.';
+const PRACTICAS=[['Inglés tipo SHL o Versant','Hazme una práctica corta (8 preguntas) de inglés tipo SHL/Versant: gramática, vocabulario y comprensión de lectura, nivel profesional. Dame las preguntas numeradas y espera mis respuestas antes de corregir.'],['Redacción de correos de soporte','Dame 2 casos de clientes molestos por email (en inglés) para que yo escriba la respuesta. Luego corrige tono, gramática y resolución.'],['Data entry y atención al detalle','Hazme una práctica de data entry: 10 ejercicios para comparar registros y detectar errores (nombres, números, fechas, direcciones). Espera mis respuestas antes de corregir.'],['Juicio situacional','Hazme 5 preguntas de juicio situacional de atención al cliente y back-office con 4 opciones cada una. Espera mis respuestas y luego explica la mejor opción.'],['Excel básico','Hazme 6 preguntas prácticas de Excel básico para back-office (BUSCARV/XLOOKUP, filtros, tablas, formatos, fórmulas simples). Espera mis respuestas.'],['Pruebas de personalidad','Explícame cómo funcionan Predictive Index y DISC, qué miden y cómo responderlas con sinceridad y coherencia. Son pruebas sin respuestas correctas.']];
+const HORAS='Hora de República Dominicana = UTC-4 todo el año (sin horario de verano). Este de EE. UU. (ET) es UTC-5 del 1 nov 2026 al 14 mar 2027 y UTC-4 el resto; Pacífico (PT) es UTC-8 en ese periodo y UTC-7 el resto.';
+
+/* ---------- Estado ---------- */
+function ls(k,v){try{ if(v===undefined) return localStorage.getItem('radar.'+k); localStorage.setItem('radar.'+k,v); }catch(e){ return null; }}
+const S={
+  pid: ls('pid')||'luz', tab: (location.hash||'').slice(1)||ls('tab')||'vacantes',
+  db:null, sample:null, downloads:null, mcp:null, user:null, limits:null,
+  ready:false, noRuntime:false, noDb:false, canWrite:true, sampleOff:false,
+  profile:null, jobs:[], cvs:[], runs:[], loaded:{}, dbSlow:false, dbError:null,
+  d:{}, busy:{}, out:{}, filtro:'pendiente', q:'', selJob:null, selCv:null, cvPreview:true,
+  post:{jobId:null, cvId:null}, paquetes:{}, rec:{jobId:null, tipo:'entrevista'}, gmail:{},
+  ev:{turns:[], files:[]}, modal:null, add:{}, toast:null, data:null, dataError:null, copiar:null
+};
+if(!TABS.some(t=>t[0]===S.tab)) S.tab='vacantes';
+if(!PERFILES.some(p=>p.id===S.pid)) S.pid='luz';
+
+/* ---------- Utilidades ---------- */
+const $=(s,r=document)=>r.querySelector(s);
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function safeUrl(u){ try{ const x=new URL(String(u||'').trim()); return (x.protocol==='https:'||x.protocol==='http:')?x.href:''; }catch(e){ return ''; } }
+function hoy(){ return new Date().toLocaleDateString('es-DO',{timeZone:'America/Santo_Domingo',weekday:'long',day:'numeric',month:'long',year:'numeric'}); }
+function hoyCorto(){ return new Date().toLocaleDateString('es-DO',{timeZone:'America/Santo_Domingo',day:'numeric',month:'short',year:'numeric'}); }
+function fmtFecha(iso){ if(!iso) return ''; const d=new Date(iso); if(isNaN(d)) return String(iso); return d.toLocaleDateString('es-DO',{timeZone:'America/Santo_Domingo',day:'numeric',month:'short'}); }
+function slug(s){ return (String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,70))||('v-'+Date.now().toString(36)); }
+function nowISO(){ return new Date().toISOString(); }
+function P(){ return S.profile||{}; }
+function nombreP(){ return P().nombre || (PERFILES.find(p=>p.id===S.pid)||{}).nombre || ''; }
+function job(id){ return S.jobs.find(j=>j.id===id); }
+function cv(id){ return S.cvs.find(c=>c.id===id); }
+function dv(k,def){ return Object.prototype.hasOwnProperty.call(S.d,k)? S.d[k] : (def==null?'':def); }
+function toast(msg,kind){ S.toast={msg,kind}; renderToast(); clearTimeout(toast.t); toast.t=setTimeout(()=>{ S.toast=null; renderToast(); }, kind==='bad'?7000:3500); }
+function renderToast(){ let el=$('#toast'); if(!S.toast){ if(el) el.remove(); return; } if(!el){ el=document.createElement('div'); el.id='toast'; el.setAttribute('role','status'); document.body.appendChild(el); } el.className='toast'+(S.toast.kind==='bad'?' bad':''); el.textContent=S.toast.msg; }
+function splitBold(s){ const out=[]; String(s||'').split(/(\*\*[^*]+\*\*)/).forEach(p=>{ if(!p) return; if(/^\*\*[^*]+\*\*$/.test(p)) out.push({t:p.slice(2,-2),b:true}); else out.push({t:p,b:false}); }); return out; }
+function inl(s){ return splitBold(s).map(r=>r.b?'<strong>'+esc(r.t)+'</strong>':esc(r.t)).join(''); }
+const loadedScripts={};
+function loadScript(src,ready){ if(ready()) return Promise.resolve(); if(loadedScripts[src]) return loadedScripts[src]; loadedScripts[src]=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=()=>res(); s.onerror=()=>{ delete loadedScripts[src]; rej(new Error('load')); }; document.head.appendChild(s); }); return loadedScripts[src]; }
+async function copiar(text){ try{ await navigator.clipboard.writeText(text); toast('Copiado.'); }catch(e){ toast('No se pudo copiar automáticamente. Abre «Ver las instrucciones», selecciona el texto y cópialo a mano.','bad'); } }
+
+/* ---------- Estructura de CV (marcas simples) ---------- */
+function estructura(md){
+  const out=[]; let sec=null, afterH3=false, beforeH2=true;
+  String(md||'').replace(/\r/g,'').split('\n').forEach(raw=>{
+    const l=raw.replace(/\s+$/,''); if(!l.trim()) return;
+    if(/^# /.test(l)){ out.push({t:'name',s:l.slice(2).trim()}); return; }
+    if(/^## /.test(l)){ beforeH2=false; afterH3=false; out.push({t:'h2',s:l.slice(3).trim()}); return; }
+    if(/^### /.test(l)){ afterH3=true; out.push({t:'h3',s:l.slice(4).trim()}); return; }
+    if(/^\s*[-•*] /.test(l)){ afterH3=false; out.push({t:'li',s:l.replace(/^\s*[-•*] /,'').trim()}); return; }
+    if(beforeH2){ out.push({t:'hdr',s:l.trim()}); return; }
+    if(afterH3){ afterH3=false; out.push({t:'meta',s:l.trim()}); return; }
+    out.push({t:'p',s:l.trim()});
+  });
+  return out;
+}
+function cvHTML(md){
+  const b=estructura(md); let h='', inList=false;
+  const close=()=>{ if(inList){ h+='</ul>'; inList=false; } };
+  b.forEach(x=>{
+    if(x.t==='li'){ if(!inList){ h+='<ul>'; inList=true; } h+='<li>'+inl(x.s)+'</li>'; return; }
+    close();
+    if(x.t==='name') h+='<div class="nm">'+inl(x.s)+'</div>';
+    else if(x.t==='hdr') h+='<div class="hd">'+inl(x.s)+'</div>';
+    else if(x.t==='h2') h+='<div class="h2">'+inl(x.s)+'</div>';
+    else if(x.t==='h3') h+='<div class="h3">'+inl(x.s)+'</div>';
+    else if(x.t==='meta') h+='<div class="meta">'+inl(x.s)+'</div>';
+    else h+='<p>'+inl(x.s)+'</p>';
+  });
+  close(); return h||'<p class="muted">Este CV está vacío.</p>';
+}
+function cvTexto(md){
+  return estructura(md).map(x=>{ const s=x.s.replace(/\*\*/g,''); if(x.t==='name') return s.toUpperCase(); if(x.t==='h2') return '\n'+s.toUpperCase(); if(x.t==='h3') return '\n'+s; if(x.t==='li') return '• '+s; return s; }).join('\n').trim();
+}
+async function cvDocx(md){
+  await loadScript(DOCX_URL,()=>!!window.docx); const D=window.docx; const ch=[];
+  const runs=(s,o)=>splitBold(s).map(r=>new D.TextRun({text:r.t,bold:r.b||!!o.bold,italics:!!o.italics,size:o.size||20,color:o.color||'222222',font:'Calibri'}));
+  estructura(md).forEach(x=>{
+    if(x.t==='name') ch.push(new D.Paragraph({children:runs(x.s,{bold:true,size:32,color:'111111'}),spacing:{after:40}}));
+    else if(x.t==='hdr') ch.push(new D.Paragraph({children:runs(x.s,{size:19,color:'444444'}),spacing:{after:20}}));
+    else if(x.t==='h2') ch.push(new D.Paragraph({children:runs(x.s.toUpperCase(),{bold:true,size:21,color:'1F3A36'}),spacing:{before:220,after:80},keepNext:true,border:{bottom:{color:'BBBBBB',space:2,style:D.BorderStyle.SINGLE,size:6}}}));
+    else if(x.t==='h3') ch.push(new D.Paragraph({children:runs(x.s,{bold:true,size:21}),spacing:{before:120,after:20},keepNext:true}));
+    else if(x.t==='meta') ch.push(new D.Paragraph({children:runs(x.s,{italics:true,size:19,color:'555555'}),spacing:{after:40},keepNext:true}));
+    else if(x.t==='li') ch.push(new D.Paragraph({children:runs(x.s,{size:20}),bullet:{level:0},spacing:{after:30}}));
+    else ch.push(new D.Paragraph({children:runs(x.s,{size:20}),spacing:{after:60}}));
+  });
+  const doc=new D.Document({styles:{default:{document:{run:{font:'Calibri'}}}},sections:[{properties:{page:{margin:{top:720,bottom:720,left:864,right:864}}},children:ch}]});
+  return D.Packer.toBlob(doc);
+}
+async function textoDocx(text){
+  await loadScript(DOCX_URL,()=>!!window.docx); const D=window.docx;
+  const ch=String(text||'').replace(/\r/g,'').split(/\n{2,}/).map(par=>new D.Paragraph({children:par.split('\n').map((ln,i)=>new D.TextRun({text:ln,break:i>0?1:0,size:22,font:'Calibri'})),spacing:{after:200}}));
+  const doc=new D.Document({sections:[{properties:{page:{margin:{top:1080,bottom:1080,left:1080,right:1080}}},children:ch}]});
+  return D.Packer.toBlob(doc);
+}
+async function hacerPdf(blocks){
+  await loadScript(JSPDF_URL,()=>!!(window.jspdf&&window.jspdf.jsPDF));
+  const pdf=new window.jspdf.jsPDF({unit:'pt',format:'letter'}); const W=pdf.internal.pageSize.getWidth(), H=pdf.internal.pageSize.getHeight(), M=54, maxW=W-2*M; let y=M-6;
+  const style=(b,i)=>pdf.setFont('helvetica', b&&i?'bolditalic':b?'bold':i?'italic':'normal');
+  function write(s,o){ o=o||{}; const size=o.size||10, lh=size*(o.lh||1.3), ind=o.indent||0, x0=M+ind; let x=x0;
+    pdf.setFontSize(size); pdf.setTextColor.apply(pdf,o.color||[34,34,34]);
+    const nl=()=>{ if(y+lh>H-M){ pdf.addPage(); y=M-6; } y+=lh; x=x0; };
+    nl(); if(o.bullet){ style(false,false); pdf.text('•',x0-10,y); }
+    splitBold(s).forEach(r=>{ r.t.split(/(\s+)/).forEach(w=>{ if(!w) return; const b=r.b||!!o.bold; style(b,!!o.italic);
+      if(/^\s+$/.test(w)){ if(x>x0) x+=pdf.getTextWidth(' '); return; }
+      const ww=pdf.getTextWidth(w); if(x+ww>M+maxW && x>x0) nl(); pdf.text(w,x,y); x+=ww; }); });
+    y+=o.after||0; }
+  blocks.forEach(x=>{
+    if(x.t==='name') write(x.s,{size:18,bold:true,color:[17,17,17],after:2});
+    else if(x.t==='hdr') write(x.s,{size:9.5,color:[80,80,80]});
+    else if(x.t==='h2'){ y+=8; write(x.s.toUpperCase(),{size:10.5,bold:true,color:[31,58,54]}); pdf.setDrawColor(185); pdf.setLineWidth(.6); pdf.line(M,y+4,W-M,y+4); y+=5; }
+    else if(x.t==='h3'){ y+=4; write(x.s,{size:10.5,bold:true}); }
+    else if(x.t==='meta') write(x.s,{size:9.5,italic:true,color:[90,90,90],after:1});
+    else if(x.t==='li') write(x.s,{size:10,indent:14,bullet:true,lh:1.28});
+    else if(x.t==='para') { write(x.s,{size:11,lh:1.4}); y+=9; }
+    else write(x.s,{size:10,after:2});
+  });
+  return pdf.output('blob');
+}
+async function guardarArchivo(nombre,dataPromise){
+  let data; try{ data=await dataPromise; }catch(e){ toast('No se pudo preparar el archivo (no cargó la librería). Revisa tu conexión e intenta de nuevo.','bad'); return; }
+  const blob=data instanceof Blob?data:new Blob([data]); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),5000);
+}
+function nombreArchivo(s){ return (String(s||'archivo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9 _.-]+/g,' ').replace(/\s+/g,' ').trim().slice(0,90))||'archivo'; }
+
+/* ---------- Datos guardados en este dispositivo ---------- */
+const LS_KEY='radar-libre.v1';
+const REGLAS_LUZ=`- Solo trabajos SIN llamadas ni voz (no-voz): data entry, back-office, operaciones, tickets, soporte por email. Prefiere email y tickets antes que chat en vivo.
+- 100% remoto y que acepte candidatos en República Dominicana. "LATAM" o "Worldwide" no garantiza RD: confirmar en el formulario o en la lista de países.
+- Pago mínimo: US$8 por hora o su equivalente en sueldo fijo mensual (unos US$1,390 al mes a tiempo completo). Lo ideal es US$15–30 por hora. Medio tiempo o tiempo completo.
+- Prefiere horario diurno en hora de RD.
+- Carga baja: tareas simples, repetitivas y con poco estrés.
+- LinkedIn: solo vacantes con 0–4 postulantes; 5–9 solo si encaja de forma excepcional; 10 o más se descarta. Sin conteo visible no cuenta.
+- Nunca pagar nada para buscar o aplicar. Señales de estafa: cobros por cursos o certificados, contacto solo por WhatsApp o Telegram, pedir cédula antes de un contrato.
+- Excluir como empleador: TransPerfect (incluye TransPerfect Connect y DataForce). Excluir ventas, cobros por teléfono y llamadas salientes.
+- "Verificada y abierta" solo si se abrió el anuncio original y el formulario de aplicación. Una copia en un agregador no prueba que siga activa.`;
+const REGLAS_CRISTIAN=`- SOLO puestos de agente o especialista de soporte al cliente por chat y/o email (incluye colas de tickets y mensajería escrita). No Team Lead, Supervisor, Manager, QA, ventas, moderación de contenido, data entry ni IT/helpdesk.
+- Cero teléfono: excluir ofertas con llamadas, phone support, inbound/outbound, videollamadas con clientes o ventas telefónicas, aunque sea "ocasional". Si la oferta no nombra los canales, excluir.
+- Debe aceptar República Dominicana de forma explícita, o LATAM / Americas / worldwide / anywhere sin una lista de países que excluya a RD. No tiene permiso de trabajo en EE. UU.: excluir si piden autorización de trabajo, residencia, dirección, SSN o ciudadanía de EE. UU., Canadá o Europa.
+- Empresa real e identificable. Excluir empresa oculta, texto de relleno, pago para postular, datos bancarios o contacto solo por Telegram o WhatsApp.
+- Idiomas: solo inglés y/o español.
+- Publicada en los últimos 7 días según la página de la oferta, y todavía abierta.
+- Nivel de agente o especialista para alguien con 5 años de experiencia (incluye liderazgo); junior solo si no hay nada mejor.
+- Prioriza gaming, streaming y entretenimiento digital, SaaS y e-commerce; Zendesk; clientes de EE. UU. con trabajo desde LATAM; pago publicado en USD; "urgent" o "immediate start".`;
+function perfilVacio(pid){ return {perfil:pid==='luz'?{nombre:'Luz Castro',titular:'Back-office, data entry, tickets y soporte por email — 100% no-voz, remoto desde RD',pagoMin:8,pagoMax:30,reglas:REGLAS_LUZ,hechos:''}:{nombre:'Cristian De La Cruz',titular:'Agente de soporte por chat, email y tickets (no-voz), remoto desde RD',pagoMin:null,pagoMax:null,reglas:REGLAS_CRISTIAN,hechos:''},cvs:{},seguimiento:{},manuales:{},paquetes:{}}; }
+function storeVacio(){ return {version:1,ia:{modo:'copiar',ollamaUrl:'http://localhost:11434',modelo:'qwen3.5',geminiKey:'',geminiModelo:'gemini-flash-latest'},perfiles:{luz:perfilVacio('luz'),cristian:perfilVacio('cristian')}}; }
+function normalizarStore(s){ const b=storeVacio(); if(!s||typeof s!=='object') return b; const out={version:1,ia:Object.assign(b.ia,s.ia||{}),perfiles:{}}; PERFILES.forEach(p=>{ const v=perfilVacio(p.id); const x=(s.perfiles||{})[p.id]||{}; out.perfiles[p.id]={perfil:Object.assign(v.perfil,x.perfil||{}),cvs:x.cvs||{},seguimiento:x.seguimiento||{},manuales:x.manuales||{},paquetes:x.paquetes||{}}; }); return out; }
+function cargarStore(){ let s=null; try{ s=JSON.parse(localStorage.getItem(LS_KEY)||'null'); }catch(e){} return normalizarStore(s); }
+let STORE=cargarStore();
+function guardarStore(){ try{ localStorage.setItem(LS_KEY,JSON.stringify(STORE)); return true; }catch(e){ toast('No se pudo guardar en este dispositivo (memoria llena o navegación privada). Exporta un respaldo en Ajustes.','bad'); return false; } }
+function PS(pid){ return STORE.perfiles[pid||S.pid]; }
+function base(){ return S.pid; }
+function canalDe(e){ const f=(e.filtro||[]).find(x=>x.regla==='Sin llamadas'); if(!f) return 'desconocido'; return f.resultado==='cumple'?'no-voz':f.resultado==='no cumple'?'voz':'desconocido'; }
+function construir(){
+  const P=PS(); const seg=P.seguimiento; const out=[];
+  ((S.data&&S.data.vacantes)||[]).forEach(v=>{ const e=v.perfiles&&v.perfiles[S.pid]; if(!e) return; const s=seg[v.id]||{}; if(s.oculta) return;
+    const pago=v.pago_texto||(v.pago_max_hora?('Unos US$'+(v.pago_min_hora||v.pago_max_hora)+'–'+v.pago_max_hora+' por hora'):'No indicado');
+    out.push(Object.assign({id:v.id,puesto:v.puesto,empresa:v.empresa,url:v.url,fuente:v.fuente,elegibilidad:v.ubicacion?('Ubicación publicada: '+v.ubicacion):'Sin restricción publicada',modalidad:'Remoto',canal:canalDe(e),canalDetalle:'',carga:'',pago,pagoHora:v.pago_max_hora,contrato:v.tipo||'',horarioRD:'',funciones:'',requisitos:'',brechas:'',encaje:'',linkedin:'No aplica',publicada:v.publicada?fmtFecha(v.publicada):'',fechaLimite:'',verificacion:'Encontrada por el buscador diario ('+v.fuente+') el '+fmtFecha(v.vista_primera_vez)+'. Falta abrir el anuncio original.',descripcion:v.descripcion,filtro:e.filtro,prioridad:e.prioridad,estado:e.estado==='excluida'?'excluida':'pendiente',motivoEstado:e.motivo,etapa:'por_revisar',origen:'buscador diario',auto:e.estado,yaNo:!!v.ya_no_aparece,actualizada:v.vista_ultima_vez},s));
+  });
+  Object.values(P.manuales).forEach(j=>{ const s=seg[j.id]||{}; if(!s.oculta) out.push(Object.assign({},j,s)); });
+  S.jobs=out; S.cvs=Object.values(P.cvs); S.profile=P.perfil; S.paquetes=P.paquetes; S.loaded={profile:true,jobs:S.ready,cvs:true};
+}
+function cambiado(){ guardarStore(); construir(); render(); }
+function guardarJob(id,patch){ const P=PS(); patch=Object.assign({},patch,{actualizada:nowISO()}); if(P.manuales[id]) Object.assign(P.manuales[id],patch); else P.seguimiento[id]=Object.assign(P.seguimiento[id]||{},patch); cambiado(); return Promise.resolve(); }
+function borrarJobLocal(id){ const P=PS(); if(P.manuales[id]) delete P.manuales[id]; else P.seguimiento[id]=Object.assign(P.seguimiento[id]||{},{oculta:true}); cambiado(); return Promise.resolve(); }
+function idLibre(pid,data){ let id=slug((data.empresa||'')+' '+(data.puesto||'')); const P=PS(pid); const usado=x=>!!P.manuales[x]||((S.data&&S.data.vacantes)||[]).some(v=>v.id===x); if(usado(id)) id=id+'-'+Date.now().toString(36).slice(-4); return id; }
+function nuevoJobEn(pid,data){ const id=idLibre(pid,data); PS(pid).manuales[id]=Object.assign({id,etapa:'por_revisar',prioridad:3,creada:nowISO(),actualizada:nowISO(),origen:'agregada a mano'},data); cambiado(); return Promise.resolve(id); }
+function nuevoJob(data){ return nuevoJobEn(S.pid,data); }
+async function datosPerfil(pid){ const P=PS(pid); const bases=Object.values(P.cvs).filter(c=>c.tipo!=='ajustado'); const c=bases.find(c=>c.principal)||bases[0]; return {id:pid,profile:P.perfil,cv:c?c.contenido||'':''}; }
+function guardarCv(id,patch){ const c=PS().cvs[id]; if(c) Object.assign(c,patch,{actualizado:nowISO()}); cambiado(); return Promise.resolve(); }
+function nuevoCv(data){ const id=slug(data.nombre)+'-'+Date.now().toString(36).slice(-5); PS().cvs[id]=Object.assign({id,creado:nowISO(),actualizado:nowISO()},data); cambiado(); return Promise.resolve(id); }
+function borrarCvLocal(id){ delete PS().cvs[id]; cambiado(); return Promise.resolve(); }
+function paquete(jobId){ const P=PS(); P.paquetes[jobId]=P.paquetes[jobId]||{}; return Promise.resolve(P.paquetes[jobId]); }
+function guardarPaquete(jobId,patch){ const P=PS(); P.paquetes[jobId]=Object.assign(P.paquetes[jobId]||{},patch,{actualizado:nowISO()}); cambiado(); return Promise.resolve(); }
+function suscribir(){ construir(); }
+function exportarRespaldo(){ const copia=JSON.parse(JSON.stringify(STORE)); copia.ia.geminiKey=''; copia.exportado=nowISO(); guardarArchivo('respaldo-radar-'+new Date().toISOString().slice(0,10)+'.json',Promise.resolve(new Blob([JSON.stringify(copia,null,1)],{type:'application/json'}))); }
+function importarRespaldo(texto){
+  let d; try{ d=JSON.parse(texto); }catch(e){ toast('Ese archivo no es un respaldo válido.','bad'); return; }
+  const n=normalizarStore(d); let total=0;
+  PERFILES.forEach(p=>{ const de=n.perfiles[p.id], a=PS(p.id); if(!(d.perfiles||{})[p.id]) return;
+    if((d.perfiles[p.id]||{}).perfil) a.perfil=Object.assign(a.perfil,de.perfil);
+    ['cvs','seguimiento','manuales','paquetes'].forEach(k=>{ Object.keys(de[k]).forEach(id=>{ a[k][id]=Object.assign(a[k][id]||{},de[k][id]); total++; }); }); });
+  if(d.ia){ ['modo','ollamaUrl','modelo','geminiModelo'].forEach(k=>{ if(d.ia[k]) STORE.ia[k]=d.ia[k]; }); }
+  cambiado(); toast('Respaldo importado ('+total+' elementos).');
+}
+
+/* ---------- Inteligencia artificial (local, Gemini o copiar y pegar) ---------- */
+function imagenesOk(){ return STORE.ia.modo==='ollama'||STORE.ia.modo==='gemini'; }
+function aTurnos(input){ return typeof input==='string'?[{role:'user',content:input}]:input.map(t=>({role:t.role,content:t.content})); }
+function aTexto(input){ if(typeof input==='string') return input; return input.map(t=>(t.role==='assistant'?'(Tu respuesta anterior)\n':'')+t.content).join('\n\n---\n\n'); }
+function parseJSON(t){ t=String(t||'').trim(); try{ return JSON.parse(t); }catch(e){} const f=t.match(/```(?:json)?\s*([\s\S]*?)```/i); if(f){ try{ return JSON.parse(f[1]); }catch(e){} } const a=t.indexOf('{'), b=t.lastIndexOf('}'); if(a>=0&&b>a){ try{ return JSON.parse(t.slice(a,b+1)); }catch(e){} } return null; }
+function b64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(file); }); }
+function setLive(key,text,json){ const b=S.busy[key]; if(!b) return; b.text=json?'Escribiendo la respuesta…':text; const el=document.querySelector('[data-live="'+key+'"]'); if(el) el.textContent=b.text; }
+async function llamarOllama(key,input,opt,signal){
+  const ia=STORE.ia; const url=String(ia.ollamaUrl||'http://localhost:11434').replace(/\/+$/,'');
+  const msgs=aTurnos(input);
+  if(opt.images&&opt.images.length){ msgs[msgs.length-1].images=await Promise.all(Array.from(opt.images).map(b64)); }
+  const cuerpo={model:ia.modelo||'qwen3.5',messages:msgs,stream:true,think:false,options:{temperature:0.4,num_ctx:12288}};
+  if(opt.json) cuerpo.format='json';
+  const enviar=()=>fetch(url+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cuerpo),signal});
+  let r=await enviar();
+  if(r.status===400){ const t=await r.text(); if(/think/i.test(t)){ delete cuerpo.think; r=await enviar(); } else throw {tipo:'ollama',status:400,detalle:t}; }
+  if(!r.ok) throw {tipo:'ollama',status:r.status,detalle:await r.text().catch(()=>'')};
+  const lector=r.body.getReader(); const dec=new TextDecoder(); let buf='', texto='';
+  for(;;){ const {value,done}=await lector.read(); if(done) break; buf+=dec.decode(value,{stream:true}); let i;
+    while((i=buf.indexOf('\n'))>=0){ const linea=buf.slice(0,i).trim(); buf=buf.slice(i+1); if(!linea) continue; let o; try{ o=JSON.parse(linea); }catch(e){ continue; }
+      if(o.error) throw {tipo:'ollama',status:500,detalle:o.error}; if(o.message&&o.message.content){ texto+=o.message.content; setLive(key,texto,opt.json); } } }
+  if(!texto.trim()) throw {tipo:'ollama',status:200,detalle:'El modelo no devolvió texto'};
+  return texto;
+}
+async function llamarGemini(key,input,opt,signal){
+  const ia=STORE.ia; if(!ia.geminiKey) throw {tipo:'gemini',status:401};
+  const turnos=aTurnos(input).map(t=>({role:t.role==='assistant'?'model':'user',parts:[{text:t.content}]}));
+  if(opt.images&&opt.images.length){ for(const f of Array.from(opt.images)){ turnos[turnos.length-1].parts.push({inline_data:{mime_type:f.type||'image/png',data:await b64(f)}}); } }
+  const cuerpo={contents:turnos,generationConfig:{temperature:0.4}}; if(opt.json) cuerpo.generationConfig.responseMimeType='application/json';
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(ia.geminiModelo||'gemini-flash-latest')+':generateContent',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':ia.geminiKey},body:JSON.stringify(cuerpo),signal});
+  if(!r.ok) throw {tipo:'gemini',status:r.status,detalle:await r.text().catch(()=>'')};
+  const d=await r.json(); const c=((d.candidates||[])[0]||{}).content; const texto=c&&c.parts?c.parts.map(p=>p.text||'').join(''):'';
+  if(!texto) throw {tipo:'gemini',status:200};
+  setLive(key,texto,opt.json); return texto;
+}
+function errorIA(e){
+  if(e&&e.name==='AbortError') return;
+  if(e&&e.tipo==='gemini'){ const m={200:'Gemini no devolvió texto. Intenta de nuevo.',400:'Gemini rechazó la solicitud. Revisa el nombre del modelo en Ajustes.',401:'Falta tu clave de Gemini en Ajustes.',403:'La clave de Gemini no es válida o no tiene permiso.',404:'Ese modelo de Gemini no existe. Revisa el nombre en Ajustes.',429:'Se acabó la cuota gratis de Gemini por ahora. Usa "Copiar y pegar" o la IA local.'}; toast(m[e.status]||'Gemini no respondió. Intenta de nuevo o usa "Copiar y pegar".','bad'); return; }
+  if(e&&e.tipo==='ollama'){ if(e.status===404||/not found/i.test(e.detalle||'')) toast('El modelo "'+STORE.ia.modelo+'" no está instalado. En PowerShell escribe: ollama pull '+STORE.ia.modelo,'bad'); else toast('Ollama respondió con un error: '+String(e.detalle||e.status).slice(0,160),'bad'); return; }
+  toast(STORE.ia.modo==='ollama'?'No se pudo conectar con Ollama. Revisa que esté abierto en la PC y configurado para esta página (Ajustes → IA local).':'No se pudo completar la solicitud. Revisa tu conexión.','bad');
+}
+function pedirCopiando(key,input,opt){ return new Promise(res=>{ S.copiar={key,prompt:aTexto(input),json:!!opt.json,imagenes:opt.images&&opt.images.length?opt.images.length:0,resolver:res,volver:S.modal}; delete S.d['copiar:resp']; S.modal='copiar'; render(); }); }
+function cerrarCopiar(valor){ const c=S.copiar; if(!c) return; S.copiar=null; S.modal=c.volver||null; render(); c.resolver(valor); }
+async function preguntar(key,input,opt){
+  opt=opt||{}; if(S.busy[key]||S.copiar) return null;
+  if(STORE.ia.modo==='copiar'){ const t=await pedirCopiando(key,input,opt); if(t==null) return null; if(opt.json){ const v=parseJSON(t); if(!v){ toast('No encontré el bloque de datos { … } en la respuesta pegada. Copia la respuesta completa e intenta de nuevo.','bad'); return null; } return v; } return t; }
+  const ctl=new AbortController(); S.busy[key]={ctl,text:''}; render();
+  try{
+    const t=STORE.ia.modo==='ollama'? await llamarOllama(key,input,opt,ctl.signal) : await llamarGemini(key,input,opt,ctl.signal);
+    if(opt.json){ const v=parseJSON(t); if(!v){ toast('La respuesta no vino en el formato esperado. Intenta de nuevo.','bad'); return null; } return v; }
+    return t;
+  }catch(e){ errorIA(e); return null; }
+  finally{ delete S.busy[key]; render(); }
+}
+function lineaPago(p){ return 'PAGO MÍNIMO: '+(p.pagoMin?('US$'+p.pagoMin+' por hora o su equivalente mensual (× 173.3)'):'no indicado')+'\nPAGO IDEAL (para expectativas salariales y negociación): '+(p.pagoMax?('hasta US$'+p.pagoMax+' por hora'):'no indicado'); }
+function ctxPerfil(){ const p=P(); return 'PERSONA: '+(p.nombre||nombreP())+'\nREGLAS DE BÚSQUEDA:\n'+(p.reglas||'(sin reglas)')+'\n'+lineaPago(p)+'\nDATOS VERDADEROS FUERA DEL CV:\n'+(p.hechos||'(ninguno)'); }
+function txtVacante(j){ if(!j) return ''; const f=[['Puesto',j.puesto],['Empresa',j.empresa],['Enlace',j.url],['Fuente',j.fuente],['Elegibilidad',j.elegibilidad],['Modalidad',j.modalidad],['Canal',(j.canal||'')+(j.canalDetalle?' — '+j.canalDetalle:'')],['Pago',j.pago],['Contrato',j.contrato],['Horario RD',j.horarioRD],['Funciones',j.funciones],['Requisitos',j.requisitos]].filter(x=>x[1]).map(x=>x[0]+': '+x[1]).join('\n'); return f+(j.descripcion?'\nDescripción completa del anuncio:\n'+String(j.descripcion).slice(0,18000):''); }
+function cvPrincipal(){ const bases=S.cvs.filter(c=>c.tipo!=='ajustado'); const c=bases.find(c=>c.principal)||bases[0]||S.cvs[0]; return c?c.contenido||'':''; }
+function partes(text,nombres){ const r={}; const re=new RegExp('^===\\s*('+nombres.join('|')+')\\s*===\\s*$','gmi'); let m, last=null, idx=0; const t=String(text||''); const cortes=[]; while((m=re.exec(t))){ cortes.push({n:m[1].toUpperCase(),i:m.index,f:re.lastIndex}); } cortes.forEach((c,k)=>{ r[c.n]=t.slice(c.f,k+1<cortes.length?cortes[k+1].i:t.length).trim(); }); if(!cortes.length) r[nombres[0].toUpperCase()]=t.trim(); return r; }
+
+/* ---------- Render ---------- */
+let pendiente=false, puntero=false;
+function pedirRender(){ if(pendiente) return; pendiente=true; requestAnimationFrame(()=>{ pendiente=false; const a=document.activeElement; if(puntero||(a&&a.tagName==='SELECT')){ S.renderLuego=true; return; } render(); }); }
+function render(){
+  const app=$('#app'); const a=document.activeElement; let foco=null;
+  if(a&&a.id&&app.contains(a)) foco={id:a.id,s:a.selectionStart,e:a.selectionEnd,top:a.scrollTop};
+  const scrolls={}; app.querySelectorAll('[data-keep]').forEach(el=>{ scrolls[el.dataset.keep]=el.scrollTop; });
+  const wy=window.scrollY;
+  app.innerHTML=vShell();
+  app.querySelectorAll('[data-keep]').forEach(el=>{ if(scrolls[el.dataset.keep]!=null) el.scrollTop=scrolls[el.dataset.keep]; });
+  if(foco){ const el=document.getElementById(foco.id); if(el){ el.focus({preventScroll:true}); try{ if(foco.s!=null) el.setSelectionRange(foco.s,foco.e); }catch(e){} el.scrollTop=foco.top; } }
+  window.scrollTo(0,wy);
+  Object.keys(S.busy).forEach(k=>{ const el=document.querySelector('[data-live="'+k+'"]'); if(el&&S.busy[k].text) el.textContent=S.busy[k].text; });
+  const ch=$('#chatbox'); if(ch&&S.ev.scroll){ ch.scrollTop=ch.scrollHeight; S.ev.scroll=false; }
+}
+function vShell(){
+  const who=PERFILES.map(p=>'<button type="button" data-act="perfil" data-id="'+p.id+'" aria-pressed="'+(p.id===S.pid)+'">'+esc(p.nombre)+'</button>').join('');
+  const tabs=TABS.map(t=>'<button type="button" data-act="tab" data-id="'+t[0]+'" '+(t[0]===S.tab?'aria-current="page"':'')+'>'+t[1]+'</button>').join('');
+  return '<header class="top"><div class="top-row"><div class="brand"><h1>Radar de Empleo</h1><small>gratis · sin membresías</small></div><div class="who" role="group" aria-label="Perfil activo">'+who+'</div></div><nav class="tabs" aria-label="Secciones">'+tabs+'</nav></header>'+vBanner()+'<main>'+vVista()+'</main>'+vModal();
+}
+function vBanner(){
+  if(!S.ready) return '<div class="banner">Cargando…</div>';
+  if(S.dataError) return '<div class="banner">Todavía no hay resultados del buscador diario. Cuando corra la primera búsqueda aparecerán aquí. Mientras, puedes agregar vacantes a mano.</div>';
+  return '';
+}
+function vVista(){
+  switch(S.tab){ case 'postular': return vPostular(); case 'cvs': return vCvs(); case 'evaluaciones': return vEval(); case 'reclutamiento': return vRec(); case 'perfil': return vPerfil(); default: return vVacantes(); }
+}
+function busyBtn(key,label,act,extra){ const b=S.busy[key]; if(b) return '<button class="btn" type="button" data-act="parar" data-key="'+key+'">Detener</button>'; return '<button class="btn primary" type="button" data-act="'+act+'" '+(extra||'')+''+'>'+label+'</button>'; }
+function live(key){ return S.busy[key]?'<div class="live" data-live="'+key+'">Pensando…</div>':''; }
+function sel(id,opts,val,attrs){ return '<select id="'+id+'" '+(attrs||'')+'>'+opts.map(o=>'<option value="'+esc(o[0])+'"'+(String(o[0])===String(val)?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select>'; }
+
+/* ---------- Vacantes ---------- */
+function etiquetaEstado(j){ if(j.estado==='pendiente'&&j.auto==='cumple') return 'Cumple tus filtros · falta verificar'; if(j.estado==='pendiente'&&j.auto==='revisar') return 'Revisar'; return ESTADOS[j.estado]||'Sin estado'; }
+function pillClase(j){ if(j.estado==='pendiente'&&j.auto==='cumple') return 'p-acc'; return ESTADO_PILL[j.estado]||'p-mut'; }
+function filtrarJobs(){
+  const q=S.q.trim().toLowerCase(); let J=S.jobs.slice();
+  if(S.filtro==='proceso') J=J.filter(j=>EN_PROCESO.includes(j.etapa)); else if(S.filtro!=='todas') J=J.filter(j=>j.estado===S.filtro);
+  if(q) J=J.filter(j=>[j.puesto,j.empresa,j.fuente,j.funciones,j.notas].join(' ').toLowerCase().includes(q));
+  return J.sort((a,b)=>(a.prioridad||9)-(b.prioridad||9)||String(b.actualizada||'').localeCompare(String(a.actualizada||'')));
+}
+function vVacantes(){
+  const c={verificada:0,pendiente:0,excluida:0,proceso:0}; S.jobs.forEach(j=>{ if(c[j.estado]!=null) c[j.estado]++; if(EN_PROCESO.includes(j.etapa)) c.proceso++; });
+  const tile=(k,l,cls)=>'<button type="button" class="tile" data-act="filtro" data-id="'+k+'" aria-pressed="'+(S.filtro===k)+'"><div class="lbl">'+l+'</div><div class="num '+cls+'">'+c[k]+'</div></button>';
+  const J=filtrarJobs(); if(S.selJob&&!J.some(j=>j.id===S.selJob)) S.selJob=null; if(!S.selJob&&J.length&&window.innerWidth>980) S.selJob=J[0].id;
+  const chips=[['verificada','Verificadas'],['pendiente','Pendientes'],['excluida','Excluidas'],['proceso','En proceso'],['todas','Todas ('+S.jobs.length+')']].map(x=>'<button type="button" class="chip" data-act="filtro" data-id="'+x[0]+'" aria-pressed="'+(S.filtro===x[0])+'">'+x[1]+'</button>').join('');
+  let list;
+  if(!S.ready) list='<div class="empty">Cargando vacantes…</div>';
+  else if(!J.length) list='<div class="empty">'+(S.jobs.length?'Nada en este filtro.':'Todavía no hay vacantes para '+esc(nombreP())+'. La búsqueda diaria las irá agregando, o agrega una con el botón de arriba.')+'</div>';
+  else list=J.map(j=>'<button type="button" class="item" data-act="selJob" data-id="'+esc(j.id)+'" aria-current="'+(j.id===S.selJob)+'"><span class="row between"><span class="pill '+pillClase(j)+'">'+esc(etiquetaEstado(j))+'</span><span class="tag">'+(j.carga?'CARGA '+esc(j.carga):'')+'</span></span><span class="t" style="margin-top:6px">'+esc(j.puesto||'(sin título)')+'</span><span class="s">'+esc(j.empresa||'')+(j.pago?' · '+esc(j.pago):'')+'</span><span class="s">'+esc([j.canal==='no-voz'?'No-voz':j.canal, j.prioridad?'Prioridad '+j.prioridad:'', EN_PROCESO.includes(j.etapa)||j.etapa==='rechazada'?ETAPA_LBL[j.etapa]:''].filter(Boolean).join(' · '))+'</span></button>').join('');
+  const sj=job(S.selJob);
+  return '<div class="tiles">'+tile('verificada','Verificadas y abiertas','n-ok')+tile('pendiente','Pendientes de verificar','n-warn')+tile('excluida','Excluidas por tus reglas','n-bad')+tile('proceso','Postuladas / en proceso','n-acc')+'</div>'+
+  '<div class="card pad row between"><div class="chips" role="group" aria-label="Filtro">'+chips+'</div><div class="row" style="flex:1; justify-content:flex-end; min-width:260px"><input type="search" id="q" placeholder="Buscar por puesto, empresa o nota" value="'+esc(S.q)+'" data-input="q" style="max-width:320px"><button class="btn primary" type="button" data-act="abrirAgregar">Agregar vacante</button></div></div>'+
+  '<div class="split"><div class="list" data-keep="jobs">'+list+'</div><div>'+(sj?vJob(sj):'<div class="empty">Elige una vacante para ver su ficha.</div>')+'</div></div>'+
+  '<p class="muted small" style="margin:0">'+(S.data&&S.data.actualizado?'Búsqueda del '+esc(new Date(S.data.actualizado).toLocaleString("es-DO",{timeZone:"America/Santo_Domingo",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}))+'. ':'')+'Vacantes de <a href="https://remotive.com" target="_blank" rel="noopener">Remotive</a>, <a href="https://himalayas.app" target="_blank" rel="noopener">Himalayas</a>, <a href="https://jobicy.com" target="_blank" rel="noopener">Jobicy</a>, <a href="https://remoteok.com" target="_blank" rel="noopener">Remote OK</a>, <a href="https://weworkremotely.com" target="_blank" rel="noopener">We Work Remotely</a> y <a href="https://www.workingnomads.com" target="_blank" rel="noopener">Working Nomads</a>. Cada una enlaza a su fuente.</p>';
+}
+function valorCampo(j,k){
+  if(k==='estado') return (ESTADOS[j.estado]||'Sin estado')+(j.motivoEstado?' — '+j.motivoEstado:'');
+  if(k==='canal') return (j.canal||'')+(j.canalDetalle?' — '+j.canalDetalle:'');
+  if(k==='pagoHora') return j.pagoHora?('US$'+j.pagoHora+'/h aprox.'):'No calculable con lo publicado';
+  if(k==='fechas') return [j.publicada&&('Publicada: '+j.publicada), j.fechaLimite&&('Fecha límite: '+j.fechaLimite)].filter(Boolean).join(' · ');
+  return j[k]==null?'':String(j[k]);
+}
+function fichaTexto(j){ return CAMPOS.map((c,i)=>(String(i+1).padStart(2,'0'))+'. '+c[1]+': '+(valorCampo(j,c[0])||'No indicado')).join('\n'); }
+function vJob(j){
+  const url=safeUrl(j.url);
+  const fic=CAMPOS.map((c,i)=>{ let v=valorCampo(j,c[0]); if(c[0]==='url'&&url) v='<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(j.url)+'</a>'; else v=esc(v||'No indicado'); return '<dt><span>'+String(i+1).padStart(2,'0')+'</span>'+esc(c[1])+'</dt><dd>'+v+'</dd>'; }).join('');
+  return '<article class="card pad stack" aria-label="Ficha de la vacante">'+
+  '<div class="row"><span class="pill '+pillClase(j)+'">'+esc(etiquetaEstado(j))+'</span>'+(j.yaNo?'<span class="tag">YA NO APARECE EN LA FUENTE</span>':'')+(j.prioridad?'<span class="tag">PRIORIDAD '+esc(j.prioridad)+'</span>':'')+(j.origen?'<span class="tag">· '+esc(j.origen)+'</span>':'')+'</div>'+
+  '<div><h2 style="font-size:24px">'+esc(j.puesto||'(sin título)')+'</h2><div class="muted">'+esc(j.empresa||'')+(j.pago?' · '+esc(j.pago):'')+'</div></div>'+
+  '<div class="row">'+(url?'<a class="btn primary" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Abrir vacante original ↗</a>':'<span class="muted small">Sin enlace guardado</span>')+'<button class="btn" type="button" data-act="copiarFicha" data-id="'+esc(j.id)+'">Copiar 20 campos</button><button class="btn" type="button" data-act="irPostular" data-id="'+esc(j.id)+'">Preparar postulación</button></div>'+
+  '<div class="grid2"><label class="f" for="estado-'+esc(j.id)+'">Estado'+sel('estado-'+j.id,Object.entries(ESTADOS),j.estado,'data-change="estado" data-id="'+esc(j.id)+'"')+'</label><label class="f" for="etapa-'+esc(j.id)+'">Mi seguimiento'+sel('etapa-'+j.id,ETAPAS,j.etapa||'por_revisar','data-change="etapa" data-id="'+esc(j.id)+'"')+'</label></div>'+
+  (j.estado!=='verificada'?'<div class="note">Márcala como <strong>Verificada y abierta</strong> solo después de abrir el anuncio original y ver el formulario de aplicación funcionando. Una copia en otro portal no cuenta.</div>':'')+
+  '<label class="f" for="notas-'+esc(j.id)+'">Notas<textarea id="notas-'+esc(j.id)+'" data-bind="notas:'+esc(j.id)+'" placeholder="Qué falta confirmar, con quién hablaste, fechas…">'+esc(dv('notas:'+j.id,j.notas||''))+'</textarea></label><div class="row"><button class="btn small" type="button" data-act="guardarNotas" data-id="'+esc(j.id)+'">Guardar notas</button></div>'+
+  '<dl class="ficha">'+fic+'</dl>'+
+  (Array.isArray(j.filtro)&&j.filtro.length?'<details open><summary>Cómo cumple las reglas de '+esc(nombreP())+'</summary><div style="margin-top:8px">'+vFiltro(j.filtro)+'</div></details>':'')+
+  (j.descripcion?'<details><summary>Texto completo del anuncio</summary><div class="out" style="margin-top:8px; max-height:420px; overflow:auto">'+esc(j.descripcion)+'</div></details>':'')+
+  '<div class="row"><button class="btn small" type="button" data-act="reanalizar" data-id="'+esc(j.id)+'"'+(j.descripcion?'':' disabled title="Primero pega el texto del anuncio con Agregar vacante"')+'>Volver a analizar con IA</button><button class="btn small danger" type="button" data-act="borrarJob" data-id="'+esc(j.id)+'">Eliminar vacante</button></div>'+live('re:'+j.id)+
+  '</article>';
+}
+
+/* ---------- Modal: agregar vacante ---------- */
+function vModal(){
+  if(!S.modal) return '';
+  let inner='';
+  if(S.modal==='agregar'){
+    const r=S.add.res;
+    inner='<h2 style="font-size:20px">Agregar o evaluar una vacante</h2><p class="muted small" style="margin:0">Pega el enlace y el texto del anuncio. La IA revisa si cumple las reglas de Luz y las de Cristian, cada uno con las suyas, y llena la ficha. Después eliges en qué perfil guardarla. La app no puede abrir páginas por sí sola: el texto lo copias tú.</p>'+
+    '<label class="f" for="add-url">Enlace del anuncio original<input type="url" id="add-url" data-bind="add:url" value="'+esc(dv('add:url'))+'" placeholder="https://…"></label>'+
+    '<div class="grid2"><label class="f" for="add-fuente">Dónde la encontraste<input type="text" id="add-fuente" data-bind="add:fuente" value="'+esc(dv('add:fuente'))+'" placeholder="LinkedIn, Himalayas, sitio de la empresa…"></label><label class="f" for="add-li">Postulantes en LinkedIn (si aplica)<input type="text" id="add-li" data-bind="add:li" value="'+esc(dv('add:li'))+'" placeholder="Ej. 3 applicants"></label></div>'+
+    '<label class="f" for="add-texto">Texto completo del anuncio<textarea id="add-texto" data-bind="add:texto" style="min-height:200px" placeholder="Copia y pega aquí todo el anuncio">'+esc(dv('add:texto'))+'</textarea></label>'+
+    '<label class="check" for="add-ok"><input type="checkbox" id="add-ok" data-bind="add:ok" '+(dv('add:ok')===true?'checked':'')+'> <span>Abrí el anuncio en el sitio original y el formulario de aplicación está abierto.</span></label>'+
+    '<div class="row">'+busyBtn('analizar','Analizar para Luz y Cristian','analizar')+'<button class="btn" type="button" data-act="guardarSinAnalizar">Guardar sin analizar</button><button class="btn" type="button" data-act="cerrarModal">Cancelar</button></div>'+live('analizar')+
+    (r?vResultadoDoble(r):'');
+  } else if(S.modal==='importar'){
+    inner='<h2 style="font-size:20px">Importar un CV</h2><p class="muted small" style="margin:0">Pega el texto completo de tu CV (desde Word, PDF o LinkedIn). La IA lo pasa al formato de la app sin agregar ni quitar datos.</p>'+
+    '<label class="f" for="imp-nombre">Nombre para este CV<input type="text" id="imp-nombre" data-bind="imp:nombre" value="'+esc(dv('imp:nombre','CV principal'))+'"></label>'+
+    '<label class="f" for="imp-texto">Texto del CV<textarea id="imp-texto" data-bind="imp:texto" style="min-height:260px">'+esc(dv('imp:texto'))+'</textarea></label>'+
+    '<div class="row">'+busyBtn('importar','Ordenar con IA y guardar','importar')+'<button class="btn" type="button" data-act="importarTal">Guardar tal cual</button><button class="btn" type="button" data-act="cerrarModal">Cancelar</button></div>'+live('importar');
+  } else if(S.modal==='copiar'&&S.copiar){
+    const c=S.copiar;
+    inner='<h2 style="font-size:20px">Pídeselo a una IA gratis</h2><ol class="small" style="margin:0; padding-left:18px"><li>Copia las instrucciones.</li><li>Pégalas en ChatGPT, Gemini o Claude'+(c.imagenes?' y adjunta tu captura de pantalla':'')+'.</li><li>Copia la respuesta completa y pégala aquí abajo.</li></ol>'+
+    '<div class="row"><button class="btn primary" type="button" data-act="copiarPrompt">Copiar instrucciones</button><a class="btn" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">ChatGPT ↗</a><a class="btn" href="https://gemini.google.com/app" target="_blank" rel="noopener noreferrer">Gemini ↗</a><a class="btn" href="https://claude.ai/new" target="_blank" rel="noopener noreferrer">Claude ↗</a></div>'+
+    '<details><summary class="small">Ver las instrucciones</summary><div class="out" style="max-height:260px; overflow:auto; margin-top:6px">'+esc(c.prompt)+'</div></details>'+
+    '<label class="f" for="copiar-resp">Respuesta de la IA'+(c.json?' (debe incluir el bloque que empieza con { y termina con })':'')+'<textarea id="copiar-resp" data-bind="copiar:resp" style="min-height:200px">'+esc(dv('copiar:resp'))+'</textarea></label>'+
+    '<div class="row"><button class="btn primary" type="button" data-act="usarRespuesta">Usar esta respuesta</button><button class="btn" type="button" data-act="cancelarCopiar">Cancelar</button></div>';
+  } else if(S.modal&&S.modal.tipo==='confirmar'){
+    inner='<h2 style="font-size:20px">'+esc(S.modal.titulo)+'</h2><p style="margin:0">'+esc(S.modal.texto)+'</p><div class="row"><button class="btn primary" type="button" data-act="confirmarSi">'+esc(S.modal.si||'Sí')+'</button><button class="btn" type="button" data-act="cerrarModal">Cancelar</button></div>';
+  }
+  return '<div class="modal-back" data-act="fondoModal"><div class="modal" role="dialog" aria-modal="true">'+inner+'</div></div>';
+}
+const VEREDICTO={verificada:['Cumple y está verificada','p-ok'],pendiente:['Cumple, falta verificar','p-warn'],excluida:['No cumple','p-bad']};
+const ICONO={'cumple':['✓','var(--ok)'],'no cumple':['✗','var(--bad)'],'no se sabe':['?','var(--warn)']};
+function vFiltro(lista){ if(!Array.isArray(lista)||!lista.length) return ''; return '<ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:4px">'+lista.map(x=>{ const ic=ICONO[String(x.resultado||'').toLowerCase()]||ICONO['no se sabe']; return '<li class="small" style="display:flex; gap:8px"><strong style="color:'+ic[1]+'; width:14px; flex:none" aria-label="'+esc(x.resultado||'')+'">'+ic[0]+'</strong><span><strong>'+esc(x.regla||'')+'</strong>'+(x.detalle?' — '+esc(x.detalle):'')+'</span></li>'; }).join('')+'</ul>'; }
+function vResultadoDoble(r){
+  const v=r.vacante||{};
+  const tarjetas=PERFILES.map(p=>{ const a=(r.perfiles||{})[p.id]; if(!a) return '<div class="card pad" style="box-shadow:none"><strong>'+esc(p.nombre)+'</strong><div class="muted small">Sin análisis.</div></div>'; const est=estadoPara(a); const vd=VEREDICTO[est];
+    return '<div class="card pad stack" style="box-shadow:none"><div class="row between"><strong style="font-size:16px">'+esc(p.nombre)+'</strong><span class="pill '+vd[1]+'">'+vd[0]+'</span></div><div class="small">'+esc(a.motivoEstado||'')+'</div>'+vFiltro(a.reglas)+
+    (a.encaje?'<div class="small"><strong>Por qué encaja:</strong> '+esc(a.encaje)+'</div>':'')+(a.brechas?'<div class="small"><strong>Lo que no cumple:</strong> '+esc(a.brechas)+'</div>':'')+
+    '<label class="check" for="save-'+p.id+'"><input type="checkbox" id="save-'+p.id+'" data-bind="add:save:'+p.id+'" '+(dv('add:save:'+p.id,est!=='excluida')?'checked':'')+'> <span>Guardar en las vacantes de '+esc(p.nombre)+'</span></label></div>'; }).join('');
+  return '<div class="card pad stack" style="box-shadow:none; background:var(--surface-2)"><div><strong style="font-size:17px">'+esc(v.puesto||'')+'</strong> <span class="muted">'+esc(v.empresa||'')+'</span></div><dl class="ficha">'+[['elegibilidad','Elegibilidad desde RD'],['canal','Canal'],['pago','Pago publicado'],['horarioRD','Horario (hora RD)'],['carga','Carga laboral']].map(k=>'<dt>'+esc(k[1])+'</dt><dd>'+esc(valorCampo(v,k[0])||'No indicado')+'</dd>').join('')+'</dl></div>'+
+  '<div class="grid2" style="align-items:start">'+tarjetas+'</div><div class="row"><button class="btn primary" type="button" data-act="guardarAnalisis">Guardar en los perfiles marcados</button></div>';
+}
+function estadoPara(a){ if(a.recomendacion==='excluida') return 'excluida'; return dv('add:ok')===true?'verificada':'pendiente'; }
+function confirmar(titulo,texto,si,fn){ S.modal={tipo:'confirmar',titulo,texto,si,fn}; render(); }
+
+/* ---------- Postular ---------- */
+function vPostular(){
+  const J=S.jobs.filter(j=>j.estado!=='excluida'&&!['rechazada','descartada'].includes(j.etapa)).sort((a,b)=>(a.prioridad||9)-(b.prioridad||9));
+  const B=S.cvs.filter(c=>c.tipo!=='ajustado');
+  if(!J.length) return '<div class="empty">No hay vacantes abiertas para preparar. Agrega una en Vacantes.</div>';
+  if(!B.length) return '<div class="empty">Primero agrega un CV base en <button class="btn small" data-act="tab" data-id="cvs">Mis CVs</button>.</div>';
+  if(!S.post.jobId||!job(S.post.jobId)) S.post.jobId=J[0].id;
+  if(!S.post.cvId||!cv(S.post.cvId)) S.post.cvId=(B.find(c=>c.principal)||B[0]).id;
+  const j=job(S.post.jobId), pk=S.paquetes[j.id]; if(!pk) paquete(j.id);
+  const p=pk||{}; const aj=p.cvAjustadoId&&cv(p.cvAjustadoId);
+  const check=[['abierta','Abrí el enlace original y la vacante sigue abierta'],['pais','Confirmé que aceptan candidatos desde República Dominicana'],['cv','Subí el CV adaptado (Word o PDF)'],['carta','Adjunté la carta si la pedían'],['preguntas','Respondí las preguntas y revisé todo antes de enviar'],['confirmacion','Guardé el correo o la captura de confirmación']];
+  const ck=p.check||{};
+  return '<div class="card pad stack"><div class="grid2"><label class="f" for="post-job">Vacante'+sel('post-job',J.map(x=>[x.id,(x.puesto||'')+' — '+(x.empresa||'')+(x.estado==='pendiente'?' (pendiente)':'')]),j.id,'data-change="postJob"')+'</label><label class="f" for="post-cv">CV base'+sel('post-cv',B.map(x=>[x.id,x.nombre]),S.post.cvId,'data-change="postCv"')+'</label></div>'+
+  (j.estado!=='verificada'?'<div class="note">Esta vacante aún está <strong>pendiente de verificar</strong>. Abre el anuncio original antes de enviar nada.</div>':'')+
+  '<div class="muted small">La app prepara todo; la postulación la envías tú en el sitio del empleador.</div></div>'+
+  '<div class="steps">'+
+  '<section class="card pad stack step"><div class="num">PASO 1</div><h3>CV adaptado a esta vacante</h3><p class="muted small" style="margin:0">Reordena y reescribe tu CV con las palabras de la vacante, usando solo datos reales. Se guarda en Mis CVs.</p><div class="row">'+busyBtn('cvaj',aj?'Volver a adaptar':'Adaptar mi CV','adaptar')+(aj?'<button class="btn" type="button" data-act="bajarDocx" data-id="'+esc(aj.id)+'">Descargar Word</button><button class="btn" type="button" data-act="bajarPdf" data-id="'+esc(aj.id)+'">Descargar PDF</button><button class="btn" type="button" data-act="copiarCv" data-id="'+esc(aj.id)+'">Copiar texto</button><button class="btn" type="button" data-act="editarCv" data-id="'+esc(aj.id)+'">Editar</button>':'')+'</div>'+live('cvaj')+
+  (aj?'<div class="grid2" style="align-items:start"><div class="paper">'+cvHTML(aj.contenido)+'</div><div class="stack">'+(p.cvNotas?'<div class="out">'+esc(p.cvNotas)+'</div>':'')+'</div></div>':'')+'</section>'+
+  '<section class="card pad stack step"><div class="num">PASO 2</div><h3>Carta de presentación</h3><label class="f" for="carta-extra">Indicaciones extra (opcional)<input type="text" id="carta-extra" data-bind="cartaExtra:'+esc(j.id)+'" value="'+esc(dv('cartaExtra:'+j.id))+'" placeholder="Ej. que mencione mi disponibilidad inmediata"></label><div class="row">'+busyBtn('carta',p.carta?'Escribir otra versión':'Escribir carta','carta')+(p.carta?'<button class="btn" type="button" data-act="bajarCartaDocx">Descargar Word</button><button class="btn" type="button" data-act="bajarCartaPdf">Descargar PDF</button><button class="btn" type="button" data-act="copiarPk" data-k="carta">Copiar</button>':'')+'</div>'+live('carta')+
+  (p.carta?'<textarea id="carta-txt" data-bind="carta:'+esc(j.id)+'" style="min-height:260px">'+esc(dv('carta:'+j.id,p.carta))+'</textarea><div class="row"><button class="btn small" type="button" data-act="guardarCarta">Guardar cambios</button></div>':'')+'</section>'+
+  '<section class="card pad stack step"><div class="num">PASO 3</div><h3>Preguntas del formulario</h3><label class="f" for="preg">Pega las preguntas que te hace el formulario<textarea id="preg" data-bind="preg:'+esc(j.id)+'" placeholder="Ej. Why are you interested in this role? What are your salary expectations?">'+esc(dv('preg:'+j.id,p.preguntas||''))+'</textarea></label><div class="row">'+busyBtn('resp','Redactar respuestas','responder')+(p.respuestas?'<button class="btn" type="button" data-act="copiarPk" data-k="respuestas">Copiar</button>':'')+'</div>'+live('resp')+(p.respuestas?'<div class="out">'+esc(p.respuestas)+'</div>':'')+'</section>'+
+  '<section class="card pad stack step"><div class="num">PASO 4</div><h3>Antes de enviar</h3>'+check.map(c=>'<label class="check" for="ck-'+c[0]+'"><input type="checkbox" id="ck-'+c[0]+'" data-change="check" data-k="'+c[0]+'" '+(ck[c[0]]?'checked':'')+'> <span>'+esc(c[1])+'</span></label>').join('')+
+  '<div class="row"><button class="btn primary" type="button" data-act="marcarPostulada">'+(EN_PROCESO.includes(j.etapa)?'Ya postulada el '+esc(fmtFecha(j.fechaPostulacion)||'—'):'Marcar como postulada')+'</button>'+(safeUrl(j.url)?'<a class="btn" href="'+esc(safeUrl(j.url))+'" target="_blank" rel="noopener noreferrer">Ir al formulario ↗</a>':'')+'</div></section>'+
+  '</div>';
+}
+
+/* ---------- Mis CVs ---------- */
+function vCvs(){
+  const L=S.cvs.slice().sort((a,b)=>(a.tipo==='ajustado')-(b.tipo==='ajustado')||(b.principal?1:0)-(a.principal?1:0)||String(b.actualizado||'').localeCompare(String(a.actualizado||'')));
+  if(S.selCv&&!cv(S.selCv)) S.selCv=null; if(!S.selCv&&L.length) S.selCv=L[0].id;
+  const c=cv(S.selCv);
+  const items=L.length?L.map(x=>'<button type="button" class="item" data-act="selCv" data-id="'+esc(x.id)+'" aria-current="'+(x.id===S.selCv)+'"><span class="row between"><span class="pill '+(x.tipo==='ajustado'?'p-acc':'p-mut')+'">'+(x.tipo==='ajustado'?'Adaptado a vacante':(x.principal?'Base principal':'Base'))+'</span><span class="tag">'+esc(fmtFecha(x.actualizado))+'</span></span><span class="t" style="margin-top:6px">'+esc(x.nombre)+'</span></button>').join(''):'<div class="empty">Aún no hay CVs para '+esc(nombreP())+'.</div>';
+  let det='<div class="empty">Importa tu CV para empezar.</div>';
+  if(c){
+    const enf=[['Soporte por email y tickets (no-voz)','Soporte por email y tickets'],['Data entry y verificación de datos','Data entry'],['Evaluación de IA y trabajo lingüístico español-inglés','Evaluación de IA / lingüística'],['Operaciones y administración back-office','Operaciones / back-office'],['Soporte por chat en vivo','Chat en vivo']];
+    det='<article class="card pad stack"><div class="row between"><input type="text" id="cvn-'+esc(c.id)+'" data-bind="cvn:'+esc(c.id)+'" value="'+esc(dv('cvn:'+c.id,c.nombre))+'" aria-label="Nombre del CV" style="font-weight:700; max-width:420px"><div class="chips"><button class="chip" type="button" data-act="cvVista" aria-pressed="'+S.cvPreview+'">Vista</button><button class="chip" type="button" data-act="cvEditar" aria-pressed="'+(!S.cvPreview)+'">Editar</button></div></div>'+
+    (S.cvPreview?'<div class="paper">'+cvHTML(dv('cvc:'+c.id,c.contenido))+'</div>':'<textarea class="code" id="cvc-'+esc(c.id)+'" data-bind="cvc:'+esc(c.id)+'">'+esc(dv('cvc:'+c.id,c.contenido))+'</textarea><p class="muted small" style="margin:0">Formato: <code># Nombre</code>, líneas de titular y contacto, <code>## SECCIÓN</code>, <code>### Cargo — Empresa</code>, una línea de fechas, viñetas con <code>- </code>, <code>**negrita**</code>.</p>')+
+    '<div class="row"><button class="btn primary" type="button" data-act="guardarCvAct" data-id="'+esc(c.id)+'">Guardar</button><button class="btn" type="button" data-act="bajarDocx" data-id="'+esc(c.id)+'">Descargar Word</button><button class="btn" type="button" data-act="bajarPdf" data-id="'+esc(c.id)+'">Descargar PDF</button><button class="btn" type="button" data-act="copiarCv" data-id="'+esc(c.id)+'">Copiar texto</button><button class="btn" type="button" data-act="duplicarCv" data-id="'+esc(c.id)+'">Duplicar</button>'+(c.tipo!=='ajustado'&&!c.principal?'<button class="btn" type="button" data-act="principalCv" data-id="'+esc(c.id)+'">Usar como principal</button>':'')+'<button class="btn danger" type="button" data-act="borrarCv" data-id="'+esc(c.id)+'">Eliminar</button></div>'+
+    (c.tipo==='ajustado'&&c.vacanteId&&job(c.vacanteId)?'<div class="muted small">Adaptado para: '+esc(job(c.vacanteId).puesto)+' — '+esc(job(c.vacanteId).empresa)+'</div>':'')+
+    (c.tipo!=='ajustado'?'<div class="card pad stack" style="box-shadow:none; background:var(--surface-2)"><strong>Crear otra versión con IA</strong><div class="row">'+sel('cv-enfoque',enf,dv('enfoque',enf[0][0]),'data-bind="enfoque"')+busyBtn('variante','Crear versión','variante','data-id="'+esc(c.id)+'"')+'</div>'+live('variante')+'</div>':'')+
+    '</article>';
+  }
+  return '<div class="row between"><p class="muted" style="margin:0">CVs de '+esc(nombreP())+'. Los adaptados a una vacante se crean desde Postular.</p><button class="btn" type="button" data-act="abrirImportar">Importar CV</button></div><div class="split"><div class="list" data-keep="cvs">'+items+'</div><div>'+det+'</div></div>';
+}
+
+/* ---------- Evaluaciones ---------- */
+function vEval(){
+  const lim=(imagenesOk()?{maxCount:4,maxInputBytes:20000000,mediaTypes:['image/png','image/jpeg','image/webp']}:null); const turns=S.ev.turns; const quick=PRACTICAS;
+  const chat=turns.length?turns.map(t=>'<div class="msg '+(t.role==='user'?'u':'a')+'">'+esc(t.content)+(t.imgs?'<div class="small muted">📎 '+t.imgs+' captura(s)</div>':'')+'</div>').join(''):'<div class="empty">Pega una captura (Ctrl+V), súbela, o escribe la pregunta. También puedes empezar una práctica con los botones.</div>';
+  const thumbs=S.ev.files.map((f,i)=>'<figure><img src="'+esc(f.url)+'" alt="Captura '+(i+1)+'"><button type="button" data-act="quitarImg" data-i="'+i+'" aria-label="Quitar captura">×</button></figure>').join('');
+  return '<div class="note">Úsala para practicar, entender preguntas y preparar tareas para la casa donde se permite ayuda. En pruebas en vivo con cámara o que prohíben ayuda externa, usarla puede descalificarte.</div>'+
+  '<div class="card pad stack"><div class="chips">'+quick.map((q,i)=>'<button class="chip" type="button" data-act="practica" data-i="'+i+'"'+(S.busy.ev?' disabled':'')+'>'+esc(q[0])+'</button>').join('')+'</div></div>'+
+  '<div class="card pad stack"><div class="chat" id="chatbox">'+chat+(S.busy.ev?'<div class="msg a live" data-live="ev">Pensando…</div>':'')+'</div>'+
+  (thumbs?'<div class="thumbs">'+thumbs+'</div>':'')+
+  '<label class="f" for="ev-in">Tu pregunta o respuesta<textarea id="ev-in" data-bind="ev:in" placeholder="Ej. ¿Qué me están pidiendo en esta pregunta? o pega tu respuesta para que la corrija">'+esc(dv('ev:in'))+'</textarea></label>'+
+  '<div class="row">'+busyBtn('ev','Enviar','evEnviar')+(lim?'<label class="btn" for="ev-file">Subir captura<input type="file" id="ev-file" accept="'+esc((lim.mediaTypes||['image/png','image/jpeg']).join(','))+'" multiple data-change="evFile" hidden></label>':'<span class="muted small">Con copiar y pegar, adjunta tu captura directamente en ChatGPT o Gemini. Para subirla aquí usa la IA local o Gemini (Ajustes).</span>')+(turns.length?'<button class="btn" type="button" data-act="evNuevo">Nueva conversación</button>':'')+'</div>'+
+  (lim?'<div class="muted small">Puedes pegar una captura con Ctrl+V. Máximo '+lim.maxCount+' por mensaje. Las capturas no se guardan.</div>':'')+'</div>';
+}
+
+/* ---------- Reclutamiento ---------- */
+function vRec(){
+  const cols=[['postulada','Postulada'],['evaluacion','Evaluación'],['entrevista','Entrevista'],['oferta','Oferta'],['cerrada','Cerradas']];
+  const cerrada=j=>j.etapa==='rechazada'||(j.etapa==='descartada'&&!!j.fechaPostulacion);
+  const en=(j,k)=>k==='cerrada'?cerrada(j):j.etapa===k;
+  const board=cols.map(c=>{ const L=S.jobs.filter(j=>en(j,c[0])); return '<div class="col"><h3><span>'+c[1]+'</span><span class="tag">'+L.length+'</span></h3>'+(L.map(j=>'<button type="button" class="item" data-act="selRec" data-id="'+esc(j.id)+'" aria-current="'+(j.id===S.rec.jobId)+'"><span class="t">'+esc(j.puesto)+'</span><span class="s">'+esc(j.empresa||'')+'</span>'+(j.proximoPaso?'<span class="s" style="color:var(--mark)">→ '+esc(j.proximoPaso)+'</span>':'')+'</button>').join('')||'<span class="muted small">—</span>')+'</div>'; }).join('');
+  const activos=S.jobs.filter(j=>EN_PROCESO.includes(j.etapa)||cerrada(j));
+  if(S.rec.jobId&&!job(S.rec.jobId)) S.rec.jobId=null; if(!S.rec.jobId&&activos.length) S.rec.jobId=(activos.find(j=>EN_PROCESO.includes(j.etapa))||activos[0]).id;
+  const j=job(S.rec.jobId);
+  let panel='<div class="empty">Cuando marques una vacante como postulada aparecerá aquí para darle seguimiento.</div>';
+  if(j){
+    const pk=S.paquetes[j.id]; if(!pk) paquete(j.id); const p=pk||{};
+    const tipos=[['entrevista','Preparar entrevista'],['reclutador','Responder a un reclutador'],['estafa','Revisar si es estafa'],['seguimiento','Correo de seguimiento'],['agradecimiento','Nota de agradecimiento'],['negociacion','Hablar de pago']];
+    const t=S.rec.tipo; const g=S.gmail[j.id];
+    panel='<article class="card pad stack"><div><h2 style="font-size:22px">'+esc(j.puesto)+'</h2><div class="muted">'+esc(j.empresa||'')+(j.fechaPostulacion?' · postulada el '+esc(fmtFecha(j.fechaPostulacion)):'')+'</div></div>'+
+    '<div class="grid2"><label class="f" for="rec-etapa">Etapa'+sel('rec-etapa',ETAPAS,j.etapa,'data-change="etapa" data-id="'+esc(j.id)+'"')+'</label><label class="f" for="rec-paso">Próximo paso<input type="text" id="rec-paso" data-bind="paso:'+esc(j.id)+'" value="'+esc(dv('paso:'+j.id,j.proximoPaso||''))+'" placeholder="Ej. Entrevista jueves 10:00 a. m. RD"></label></div><div class="row"><button class="btn small" type="button" data-act="guardarPaso" data-id="'+esc(j.id)+'">Guardar próximo paso</button></div>'+
+    '<div class="card pad stack" style="box-shadow:none; background:var(--surface-2)"><div class="chips">'+tipos.map(x=>'<button class="chip" type="button" data-act="recTipo" data-id="'+x[0]+'" aria-pressed="'+(t===x[0])+'">'+x[1]+'</button>').join('')+'</div>'+
+    '<label class="f" for="rec-ctx">'+({entrevista:'Datos de la entrevista (opcional): con quién, formato, lo que te dijeron',reclutador:'Pega el mensaje del reclutador',estafa:'Pega el mensaje, correo u oferta',seguimiento:'Contexto (opcional): con quién hablaste, cuándo postulaste',agradecimiento:'¿Con quién hablaste y qué temas salieron?',negociacion:'¿Qué te ofrecieron o qué te preguntaron sobre pago?'}[t])+'<textarea id="rec-ctx" data-bind="ctx:'+esc(j.id)+':'+t+'">'+esc(dv('ctx:'+j.id+':'+t))+'</textarea></label>'+
+    '<div class="row">'+busyBtn('rec','Generar','recGenerar')+(p[t]?'<button class="btn" type="button" data-act="copiarPk" data-k="'+t+'" data-id="'+esc(j.id)+'">Copiar</button>':'')+'</div>'+live('rec')+(p[t]?'<div class="out">'+esc(p[t])+'</div>':'')+'</div>'+
+        '</article>';
+  }
+  return '<div class="board">'+board+'</div>'+panel;
+}
+function vGmail(g){
+  if(!g) return ''; if(g.cargando) return '<div class="live">Buscando en Gmail…</div>'; if(g.error) return '<div class="note">'+esc(g.error)+'</div>';
+  if(!g.items.length) return '<div class="muted small">No hay correos de los últimos 120 días que mencionen a esta empresa.</div>';
+  return '<div class="stack">'+g.items.map(m=>'<div class="out"><strong>'+esc(m.subject||'(sin asunto)')+'</strong><div class="small muted">'+esc(m.sender||'')+' · '+esc(m.date||'')+'</div>'+esc(m.snippet||'')+(safeUrl(m.url)?'<div><a href="'+esc(safeUrl(m.url))+'" target="_blank" rel="noopener noreferrer">Abrir en Gmail ↗</a></div>':'')+'</div>').join('')+'</div>';
+}
+
+/* ---------- Perfil ---------- */
+function ghInfo(){ const h=location.hostname; const m=h.match(/^([^.]+)\.github\.io$/i); if(!m) return null; const repo=(location.pathname.split('/').filter(Boolean)[0])||''; return {dueno:m[1],repo,base:'https://github.com/'+m[1]+'/'+repo}; }
+function vPerfil(){
+  const p=P(); const ia=STORE.ia; const gh=ghInfo(); const origen=location.origin;
+  const radio=(v,l,d)=>'<label class="check" for="ia-'+v+'"><input type="radio" name="ia-modo" id="ia-'+v+'" value="'+v+'" data-change="iaModo" '+(ia.modo===v?'checked':'')+'> <span><strong>'+l+'</strong><br><span class="muted small">'+d+'</span></span></label>';
+  const fuentes=S.data&&S.data.fuentes?'<ul class="small" style="margin:0; padding-left:18px">'+Object.entries(S.data.fuentes).map(([n,i])=>'<li>'+esc(n)+': '+(i.ok?esc(i.vacantes)+' vacantes revisadas':'<span style="color:var(--bad)">no respondió</span>')+'</li>').join('')+'</ul>':'<div class="muted small">Todavía no hay resultados.</div>';
+  return '<div class="grid2" style="align-items:start"><section class="card pad stack"><h2 style="font-size:20px">Perfil y reglas de '+esc(nombreP())+'</h2>'+
+  '<label class="f" for="pf-nombre">Nombre completo<input type="text" id="pf-nombre" data-bind="pf:nombre" value="'+esc(dv('pf:nombre',p.nombre||''))+'"></label>'+
+  '<label class="f" for="pf-titular">Qué busca (una línea)<input type="text" id="pf-titular" data-bind="pf:titular" value="'+esc(dv('pf:titular',p.titular||''))+'"></label>'+
+  '<div class="grid2"><label class="f" for="pf-min">Pago mínimo (US$/h)<input type="number" id="pf-min" min="0" step="0.5" data-bind="pf:pagoMin" value="'+esc(dv('pf:pagoMin',p.pagoMin==null?'':p.pagoMin))+'"></label><label class="f" for="pf-max">Pago ideal (US$/h, para negociar)<input type="number" id="pf-max" min="0" step="0.5" data-bind="pf:pagoMax" value="'+esc(dv('pf:pagoMax',p.pagoMax==null?'':p.pagoMax))+'"></label></div>'+
+  '<label class="f" for="pf-reglas">Reglas (la IA las aplica al analizar, adaptar CVs y escribir)<textarea id="pf-reglas" data-bind="pf:reglas" style="min-height:220px">'+esc(dv('pf:reglas',p.reglas||''))+'</textarea></label>'+
+  '<label class="f" for="pf-hechos">Datos verdaderos que no están en el CV<textarea id="pf-hechos" data-bind="pf:hechos" style="min-height:120px">'+esc(dv('pf:hechos',p.hechos||''))+'</textarea></label>'+
+  '<div class="row"><button class="btn primary" type="button" data-act="guardarPerfil">Guardar perfil</button></div>'+
+  '<p class="muted small" style="margin:0">Estas reglas son para la IA. Las del buscador diario están en el archivo config/perfiles.json de GitHub.</p></section>'+
+  '<div class="stack"><section class="card pad stack"><h2 style="font-size:20px">Inteligencia artificial</h2>'+
+  radio('copiar','Copiar y pegar','Funciona en el teléfono y en la PC: la app prepara las instrucciones y tú las pegas en ChatGPT, Gemini o Claude gratis.')+
+  radio('ollama','IA local con Ollama','Solo en la PC donde está instalado Ollama. Gratis, sin internet y sin límites.')+
+  radio('gemini','Gemini con clave gratis','Opcional. La cuota gratis es pequeña y Google puede usar lo que envías para mejorar sus productos.')+
+  (ia.modo==='ollama'?'<div class="card pad stack" style="box-shadow:none; background:var(--surface-2)"><div class="grid2"><label class="f" for="ia-url">Dirección de Ollama<input type="text" id="ia-url" data-bind="ia:ollamaUrl" value="'+esc(dv('ia:ollamaUrl',ia.ollamaUrl))+'"></label><label class="f" for="ia-modelo">Modelo<input type="text" id="ia-modelo" data-bind="ia:modelo" value="'+esc(dv('ia:modelo',ia.modelo))+'"></label></div><div class="row"><button class="btn" type="button" data-act="guardarIA">Guardar</button><button class="btn" type="button" data-act="probarOllama">Probar conexión</button></div>'+
+    '<ol class="small" style="margin:0; padding-left:18px"><li>Instala Ollama desde ollama.com y en PowerShell escribe <code>ollama pull '+esc(ia.modelo||'qwen3.5')+'</code>.</li><li>Permite esta página: en PowerShell escribe <code>setx OLLAMA_ORIGINS "'+esc(origen)+'"</code>. Después cierra Ollama (icono junto al reloj → Quit) y ábrelo otra vez.</li><li>Usa esta app en Chrome o Edge en esa misma PC. Si el navegador pregunta si permites el acceso a dispositivos de tu red local, acepta.</li></ol></div>':'')+
+  (ia.modo==='gemini'?'<div class="card pad stack" style="box-shadow:none; background:var(--surface-2)"><div class="grid2"><label class="f" for="ia-key">Clave de Gemini<input type="password" id="ia-key" data-bind="ia:geminiKey" value="'+esc(dv('ia:geminiKey',ia.geminiKey))+'" autocomplete="off"></label><label class="f" for="ia-gm">Modelo<input type="text" id="ia-gm" data-bind="ia:geminiModelo" value="'+esc(dv('ia:geminiModelo',ia.geminiModelo))+'"></label></div><div class="row"><button class="btn" type="button" data-act="guardarIA">Guardar</button></div><p class="muted small" style="margin:0">La clave se consigue gratis en aistudio.google.com y se guarda solo en este dispositivo. No se incluye en los respaldos.</p></div>':'')+
+  '</section>'+
+  '<section class="card pad stack"><h2 style="font-size:20px">Respaldo</h2><p class="muted small" style="margin:0">Tus CVs, notas y seguimiento se guardan solo en este dispositivo y navegador. Exporta un respaldo de vez en cuando e impórtalo en el otro dispositivo para tener lo mismo en el teléfono y en la PC.</p><div class="row"><button class="btn" type="button" data-act="exportar">Exportar respaldo</button><label class="btn" for="imp-file">Importar respaldo<input type="file" id="imp-file" accept="application/json,.json" data-change="importar" hidden></label></div></section>'+
+  '<section class="card pad stack"><h2 style="font-size:20px">Buscador diario</h2><p style="margin:0">'+(S.data&&S.data.actualizado?'Última búsqueda: '+esc(new Date(S.data.actualizado).toLocaleString('es-DO',{timeZone:'America/Santo_Domingo',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'})):'Todavía no ha corrido.')+'</p>'+fuentes+
+  (gh?'<div class="row"><a class="btn" href="'+esc(gh.base)+'/actions/workflows/buscar.yml" target="_blank" rel="noopener">Buscar ahora (en GitHub) ↗</a><a class="btn" href="'+esc(gh.base)+'/edit/main/config/perfiles.json" target="_blank" rel="noopener">Editar reglas del buscador ↗</a></div><p class="muted small" style="margin:0">Para buscar ahora: en GitHub pulsa "Run workflow". Tarda unos minutos.</p>':'')+
+  '</section></div></div>';
+}
+
+/* ---------- Acciones ---------- */
+const ACT={
+  perfil(el){ if(el.dataset.id===S.pid) return; S.pid=el.dataset.id; ls('pid',S.pid); Object.assign(S,{selJob:null,selCv:null,post:{jobId:null,cvId:null},rec:{jobId:null,tipo:'entrevista'},ev:{turns:[],files:[]},d:{}}); suscribir(); render(); },
+  tab(el){ S.tab=el.dataset.id; ls('tab',S.tab); try{ history.replaceState(null,'','#'+S.tab); }catch(e){} render(); window.scrollTo(0,0); },
+  filtro(el){ S.filtro=el.dataset.id; S.selJob=null; render(); },
+  selJob(el){ S.selJob=el.dataset.id; render(); if(window.innerWidth<=980){ const a=$('article.card'); if(a) a.scrollIntoView({block:'start'}); } },
+  parar(el){ const b=S.busy[el.dataset.key]; if(b) b.ctl.abort(); },
+  copiarFicha(el){ const j=job(el.dataset.id); if(j) copiar(fichaTexto(j)); },
+  irPostular(el){ S.post.jobId=el.dataset.id; S.tab='postular'; ls('tab','postular'); render(); window.scrollTo(0,0); },
+  guardarNotas(el){ const id=el.dataset.id; const k='notas:'+id; if(!(k in S.d)) return; guardarJob(id,{notas:S.d[k]}).then(()=>{ delete S.d[k]; toast('Notas guardadas.'); }).catch(()=>{}); },
+  borrarJob(el){ const j=job(el.dataset.id); if(!j) return; const auto=!PS().manuales[j.id]; confirmar(auto?'Ocultar vacante':'Eliminar vacante',auto?'Se ocultará "'+(j.puesto||'')+'" de tu lista en este dispositivo.':'Se borrará "'+(j.puesto||'')+'". Esta acción no se puede deshacer.',auto?'Ocultar':'Eliminar',()=>borrarJobLocal(j.id).then(()=>{ S.selJob=null; toast(auto?'Vacante oculta.':'Vacante eliminada.'); })); },
+  abrirAgregar(){ S.modal='agregar'; S.add={}; ['add:url','add:fuente','add:li','add:texto','add:ok'].forEach(k=>delete S.d[k]); render(); setTimeout(()=>{ const e=$('#add-url'); if(e) e.focus(); },0); },
+  cerrarModal(){ if(S.copiar){ cerrarCopiar(null); return; } S.modal=null; render(); },
+  fondoModal(el,ev){ if(ev&&ev.target===el){ if(S.copiar){ cerrarCopiar(null); return; } S.modal=null; render(); } },
+  confirmarSi(){ const m=S.modal; S.modal=null; render(); if(m&&m.fn) Promise.resolve(m.fn()).catch(()=>{}); },
+  async analizar(){
+    const texto=String(dv('add:texto')).trim(); if(texto.length<80){ toast('Pega el texto completo del anuncio (al menos unas líneas).','bad'); return; }
+    let perfiles; try{ perfiles=await Promise.all(PERFILES.map(p=>datosPerfil(p.id))); }catch(e){ toast('No se pudieron leer los perfiles. Intenta de nuevo.','bad'); return; }
+    const r=await preguntar('analizar',promptAnalisisDoble(texto,dv('add:url'),dv('add:fuente'),dv('add:li'),perfiles),{json:true});
+    if(!r||typeof r!=='object'||!r.vacante||!r.perfiles){ if(r) toast('La respuesta no llegó en el formato esperado. Intenta de nuevo.','bad'); return; }
+    PERFILES.forEach(p=>delete S.d['add:save:'+p.id]); S.add.res=r; render();
+  },
+  async guardarAnalisis(){
+    const r=S.add.res; if(!r) return; const x=extrasAdd(); const guardados=[]; let idActivo=null, estActivo=null;
+    for(const p of PERFILES){ const a=(r.perfiles||{})[p.id]; if(!a) continue; const est=estadoPara(a); if(!dv('add:save:'+p.id,est!=='excluida')) continue;
+      const data=armarJob(Object.assign({},r.vacante,{recomendacion:a.recomendacion,motivoEstado:a.motivoEstado,reglas:a.reglas,brechas:a.brechas,encaje:a.encaje,prioridad:a.prioridad,estado:est}),x);
+      try{ const id=await nuevoJobEn(p.id,data); guardados.push(p.nombre); if(p.id===S.pid){ idActivo=id; estActivo=est; } }catch(e){ return; } }
+    if(!guardados.length){ toast('Marca al menos un perfil para guardar.','bad'); return; }
+    S.modal=null; if(idActivo){ S.filtro=estActivo; S.selJob=idActivo; } render(); toast('Vacante guardada en: '+guardados.join(' y ')+'.');
+  },
+  guardarSinAnalizar(){ const url=dv('add:url'), texto=dv('add:texto'); if(!url&&!texto){ toast('Pega al menos el enlace o el texto.','bad'); return; } const ok=dv('add:ok')===true; nuevoJob({puesto:(String(texto).split('\n').find(l=>l.trim())||'Vacante sin título').slice(0,120),empresa:'',url,fuente:dv('add:fuente'),linkedin:dv('add:li'),descripcion:String(texto).slice(0,30000),estado:ok?'verificada':'pendiente',motivoEstado:ok?'':'Sin analizar',verificacion:ok?'Formulario abierto, revisado a mano el '+hoyCorto():'Sin verificar'}).then(id=>{ S.modal=null; S.filtro=ok?'verificada':'pendiente'; S.selJob=id; render(); }).catch(()=>{}); },
+  async reanalizar(el){ const j=job(el.dataset.id); if(!j||!j.descripcion) return; const r=await preguntar('re:'+j.id,promptAnalisis(j.descripcion,j.url,j.fuente,j.linkedin),{json:true}); if(!r||typeof r!=='object') return; const est=j.estado==='verificada'&&r.recomendacion!=='excluida'?'verificada':(r.recomendacion==='excluida'?'excluida':(j.estado==='verificada'?'verificada':'pendiente')); const d=armarJob(Object.assign({},r,{estado:est}),{li:j.linkedin}); delete d.descripcion; delete d.url; delete d.fuente; delete d.verificacion; guardarJob(j.id,d).then(()=>toast('Ficha actualizada.')).catch(()=>{}); },
+  async adaptar(){
+    const j=job(S.post.jobId), base0=cv(S.post.cvId); if(!j||!base0) return;
+    const txt=await preguntar('cvaj',promptAdaptar(j,base0)); if(!txt) return;
+    const pr=partes(txt,['CV','CAMBIOS','PALABRAS CLAVE','BRECHAS']); if(!pr.CV||!/^#\s/m.test(pr.CV)){ toast('La respuesta no trajo un CV con el formato esperado. Intenta de nuevo.','bad'); return; }
+    const notas=['Cambios:\n'+(pr.CAMBIOS||'—'),'Palabras clave:\n'+(pr['PALABRAS CLAVE']||'—'),'Brechas:\n'+(pr.BRECHAS||'—')].join('\n\n');
+    const pk=await paquete(j.id); const nombre='CV — '+(j.empresa||'')+' — '+(j.puesto||'');
+    try{
+      let id=pk.cvAjustadoId&&cv(pk.cvAjustadoId)?pk.cvAjustadoId:null;
+      if(id) await guardarCv(id,{contenido:pr.CV,nombre}); else id=await nuevoCv({nombre,tipo:'ajustado',vacanteId:j.id,baseId:base0.id,contenido:pr.CV});
+      await guardarPaquete(j.id,{cvAjustadoId:id,cvNotas:notas}); delete S.d['cvc:'+id];
+      if(j.etapa==='por_revisar') guardarJob(j.id,{etapa:'preparando'}).catch(()=>{});
+      toast('CV adaptado y guardado en Mis CVs.'); render();
+    }catch(e){}
+  },
+  async carta(){ const j=job(S.post.jobId), c0=cv(S.post.cvId); if(!j||!c0) return; const pk=await paquete(j.id); const c=(pk.cvAjustadoId&&cv(pk.cvAjustadoId))||c0; const t=await preguntar('carta',promptCarta(j,c,dv('cartaExtra:'+j.id))); if(!t) return; delete S.d['carta:'+j.id]; guardarPaquete(j.id,{carta:t.trim()}).then(()=>render()).catch(()=>{}); },
+  guardarCarta(){ const j=job(S.post.jobId); const k='carta:'+j.id; if(!(k in S.d)) return; guardarPaquete(j.id,{carta:S.d[k]}).then(()=>{ delete S.d[k]; toast('Carta guardada.'); }).catch(()=>{}); },
+  async responder(){ const j=job(S.post.jobId), c0=cv(S.post.cvId); if(!j||!c0) return; const q=String(dv('preg:'+j.id,(S.paquetes[j.id]||{}).preguntas||'')).trim(); if(!q){ toast('Pega primero las preguntas del formulario.','bad'); return; } const pk=await paquete(j.id); const c=(pk.cvAjustadoId&&cv(pk.cvAjustadoId))||c0; const t=await preguntar('resp',promptRespuestas(j,c,q)); if(!t) return; guardarPaquete(j.id,{preguntas:q,respuestas:t.trim()}).then(()=>render()).catch(()=>{}); },
+  copiarPk(el){ const id=el.dataset.id||S.post.jobId; const p=S.paquetes[id]||{}; const k=el.dataset.k; const v=k==='carta'?dv('carta:'+id,p.carta):p[k]; if(v) copiar(v); },
+  bajarCartaDocx(){ const j=job(S.post.jobId); const p=S.paquetes[j.id]||{}; const t=dv('carta:'+j.id,p.carta); guardarArchivo(nombreArchivo('Carta '+(P().nombre||nombreP())+' '+(j.empresa||''))+'.docx',textoDocx(t)); },
+  bajarCartaPdf(){ const j=job(S.post.jobId); const p=S.paquetes[j.id]||{}; const t=dv('carta:'+j.id,p.carta); guardarArchivo(nombreArchivo('Carta '+(P().nombre||nombreP())+' '+(j.empresa||''))+'.pdf',hacerPdf(String(t||'').split(/\n{2,}/).map(s=>({t:'para',s:s.replace(/\n/g,' ')})))); },
+  marcarPostulada(){ const j=job(S.post.jobId); if(!j||EN_PROCESO.includes(j.etapa)) return; guardarJob(j.id,{etapa:'postulada',fechaPostulacion:nowISO()}).then(()=>toast('Marcada como postulada. La verás en Reclutamiento.')).catch(()=>{}); },
+  selCv(el){ S.selCv=el.dataset.id; render(); },
+  cvVista(){ S.cvPreview=true; render(); }, cvEditar(){ S.cvPreview=false; render(); },
+  editarCv(el){ S.selCv=el.dataset.id; S.cvPreview=false; S.tab='cvs'; ls('tab','cvs'); render(); window.scrollTo(0,0); },
+  guardarCvAct(el){ const id=el.dataset.id; const c=cv(id); if(!c) return; const patch={}; if(('cvc:'+id) in S.d) patch.contenido=S.d['cvc:'+id]; if(('cvn:'+id) in S.d) patch.nombre=String(S.d['cvn:'+id]).trim()||c.nombre; if(!Object.keys(patch).length){ toast('No hay cambios que guardar.'); return; } guardarCv(id,patch).then(()=>{ delete S.d['cvc:'+id]; delete S.d['cvn:'+id]; toast('CV guardado.'); }).catch(()=>{}); },
+  bajarDocx(el){ const c=cv(el.dataset.id); if(!c) return; guardarArchivo(nombreArchivo(c.nombre)+'.docx',cvDocx(dv('cvc:'+c.id,c.contenido))); },
+  bajarPdf(el){ const c=cv(el.dataset.id); if(!c) return; guardarArchivo(nombreArchivo(c.nombre)+'.pdf',hacerPdf(estructura(dv('cvc:'+c.id,c.contenido)))); },
+  copiarCv(el){ const c=cv(el.dataset.id); if(c) copiar(cvTexto(dv('cvc:'+c.id,c.contenido))); },
+  duplicarCv(el){ const c=cv(el.dataset.id); if(!c) return; nuevoCv({nombre:c.nombre+' (copia)',tipo:'base',contenido:dv('cvc:'+c.id,c.contenido)}).then(id=>{ S.selCv=id; S.cvPreview=false; render(); }).catch(()=>{}); },
+  principalCv(el){ const id=el.dataset.id; const otros=S.cvs.filter(c=>c.principal&&c.id!==id); Promise.all(otros.map(o=>guardarCv(o.id,{principal:false}))).then(()=>guardarCv(id,{principal:true})).then(()=>toast('Ahora es tu CV principal.')).catch(()=>{}); },
+  borrarCv(el){ const c=cv(el.dataset.id); if(!c) return; confirmar('Eliminar CV','Se borrará "'+c.nombre+'" de este dispositivo. Esta acción no se puede deshacer.','Eliminar',()=>borrarCvLocal(c.id).then(()=>{ S.selCv=null; toast('CV eliminado.'); })); },
+  async variante(el){ const c=cv(el.dataset.id); if(!c) return; const enfoque=dv('enfoque',$('#cv-enfoque')?$('#cv-enfoque').value:''); const t=await preguntar('variante',promptVariante(c,enfoque)); if(!t) return; const pr=partes(t,['CV','CAMBIOS']); if(!pr.CV||!/^#\s/m.test(pr.CV)){ toast('La respuesta no trajo un CV con el formato esperado. Intenta de nuevo.','bad'); return; } nuevoCv({nombre:'CV — '+enfoque,tipo:'base',contenido:pr.CV,notas:pr.CAMBIOS||''}).then(id=>{ S.selCv=id; S.cvPreview=true; render(); toast('Nueva versión guardada.'); }).catch(()=>{}); },
+  abrirImportar(){ S.modal='importar'; render(); },
+  async importar(){ const t=String(dv('imp:texto')).trim(); if(t.length<100){ toast('Pega el texto completo del CV.','bad'); return; } const r=await preguntar('importar',promptImportar(t)); if(!r) return; const pr=partes(r,['CV','NOTAS']); if(!pr.CV||!/^#\s/m.test(pr.CV)){ toast('No se pudo ordenar el CV. Prueba "Guardar tal cual".','bad'); return; } const principal=!S.cvs.some(c=>c.principal); nuevoCv({nombre:String(dv('imp:nombre','CV principal')).trim()||'CV principal',tipo:'base',principal,contenido:pr.CV,notas:pr.NOTAS||''}).then(id=>{ S.modal=null; S.selCv=id; S.tab='cvs'; delete S.d['imp:texto']; render(); if(pr.NOTAS) toast('CV importado. Revisa lo que falta completar en la vista de edición.'); }).catch(()=>{}); },
+  importarTal(){ const t=String(dv('imp:texto')).trim(); if(!t){ toast('Pega el texto del CV.','bad'); return; } nuevoCv({nombre:String(dv('imp:nombre','CV principal')).trim()||'CV principal',tipo:'base',principal:!S.cvs.some(c=>c.principal),contenido:t}).then(id=>{ S.modal=null; S.selCv=id; S.cvPreview=false; S.tab='cvs'; delete S.d['imp:texto']; render(); }).catch(()=>{}); },
+  practica(el){ const q=PRACTICAS[Number(el.dataset.i)]; if(q) enviarEval(q[1],[]); },
+  evEnviar(){ const t=String(dv('ev:in')).trim(); const files=S.ev.files.map(f=>f.file); if(!t&&!files.length){ toast('Escribe algo o agrega una captura.','bad'); return; } enviarEval(t||'Explícame qué pide esta captura y cómo resolverlo.',files); },
+  evNuevo(){ S.ev.files.forEach(f=>URL.revokeObjectURL(f.url)); S.ev={turns:[],files:[]}; render(); },
+  quitarImg(el){ const i=Number(el.dataset.i); const f=S.ev.files[i]; if(f) URL.revokeObjectURL(f.url); S.ev.files.splice(i,1); render(); },
+  selRec(el){ S.rec.jobId=el.dataset.id; render(); },
+  recTipo(el){ S.rec.tipo=el.dataset.id; render(); },
+  guardarPaso(el){ const id=el.dataset.id; const k='paso:'+id; if(!(k in S.d)) return; guardarJob(id,{proximoPaso:S.d[k]}).then(()=>{ delete S.d[k]; toast('Guardado.'); }).catch(()=>{}); },
+  async recGenerar(){ const j=job(S.rec.jobId); if(!j) return; const t=S.rec.tipo; const ctx=String(dv('ctx:'+j.id+':'+t)).trim(); if(['reclutador','estafa'].includes(t)&&!ctx){ toast('Pega primero el mensaje.','bad'); return; } await paquete(j.id); const c=cvPara(j); const r=await preguntar('rec',promptRec(t,j,c,ctx)); if(!r) return; guardarPaquete(j.id,{[t]:r.trim()}).then(()=>render()).catch(()=>{}); },
+  async gmail(el){ const j=job(el.dataset.id); if(!j||!S.mcp) return; const emp=String(j.empresa||'').replace(/["()]/g,' ').trim(); if(!emp){ toast('Esta vacante no tiene empresa guardada.','bad'); return; } S.gmail[j.id]={cargando:true}; render();
+    try{ const res=await S.mcp.callTool('Gmail','search_threads',{query:'"'+emp+'" newer_than:120d',pageSize:10,view:'THREAD_VIEW_SUMMARY'}); const pl=res&&res.payload; const th=(pl&&(pl.threads||pl.thread))||[]; S.gmail[j.id]={items:(Array.isArray(th)?th:[]).map(t=>{ const m=(t.messages&&t.messages[0])||{}; return {subject:m.subject||t.subject,snippet:m.snippet||t.snippet,sender:m.sender||'',date:m.date||'',url:t.viewUrl||m.viewUrl}; })}; }
+    catch(e){ const c=e&&e.code; S.gmail[j.id]={error:{needs_reauth:'Tu conexión con Gmail venció. Reconéctala en claude.ai → Ajustes → Conectores.',server_not_connected:'Gmail no está conectado en esta cuenta. Agrégalo en claude.ai → Ajustes → Conectores.',not_in_manifest:'No le diste permiso a la app para usar Gmail.',approval_required:'Hace falta tu aprobación para usar Gmail. Vuelve a pulsar el botón y acepta.',selection_required:'Elige cuál conexión de Gmail usar cuando claude.ai te lo pregunte.',blocked_by_policy:'Tu organización bloquea esta herramienta de Gmail.'}[c]||'No se pudo consultar Gmail ahora. Intenta de nuevo en un momento.'}; }
+    render(); },
+  guardarPerfil(){ const patch={}; ['nombre','titular','reglas','hechos'].forEach(k=>{ if(('pf:'+k) in S.d) patch[k]=String(S.d['pf:'+k]); }); ['pagoMin','pagoMax'].forEach(k=>{ if(('pf:'+k) in S.d){ const n=parseFloat(S.d['pf:'+k]); patch[k]=isNaN(n)?null:n; } }); if(!Object.keys(patch).length){ toast('No hay cambios que guardar.'); return; } Object.assign(PS().perfil,patch); Object.keys(S.d).filter(k=>k.startsWith('pf:')).forEach(k=>delete S.d[k]); cambiado(); toast('Perfil guardado.'); },
+  guardarIA(){ ['ollamaUrl','modelo','geminiKey','geminiModelo'].forEach(k=>{ if(('ia:'+k) in S.d){ STORE.ia[k]=String(S.d['ia:'+k]).trim(); delete S.d['ia:'+k]; } }); guardarStore(); render(); toast('Ajustes de IA guardados.'); },
+  async probarOllama(){ ACT.guardarIA(); const url=String(STORE.ia.ollamaUrl||'').replace(/\/+$/,''); try{ const r=await fetch(url+'/api/tags'); if(!r.ok) throw new Error('HTTP '+r.status); const d=await r.json(); const ms=(d.models||[]).map(m=>m.name); toast(ms.length?'Conectado. Modelos instalados: '+ms.join(', '):'Conectado, pero no hay modelos instalados. Escribe ollama pull '+STORE.ia.modelo+' en PowerShell.'); }catch(e){ toast('No se pudo conectar con Ollama en '+url+'. Revisa que esté abierto y que OLLAMA_ORIGINS permita esta página.','bad'); } },
+  exportar(){ exportarRespaldo(); },
+  copiarPrompt(){ if(S.copiar) copiar(S.copiar.prompt); },
+  usarRespuesta(){ const t=String(dv('copiar:resp')).trim(); if(!t){ toast('Pega primero la respuesta de la IA.','bad'); return; } delete S.d['copiar:resp']; cerrarCopiar(t); },
+  cancelarCopiar(){ cerrarCopiar(null); },
+};
+const CHANGE={
+  estado(el){ const id=el.dataset.id, v=el.value; const patch={estado:v}; if(v==='verificada') patch.verificacion='Formulario original abierto, revisado a mano el '+hoyCorto(); guardarJob(id,patch).then(()=>toast(v==='verificada'?'Marcada como verificada.':'Estado actualizado.')).catch(()=>{}); },
+  etapa(el){ const id=el.dataset.id, v=el.value; const j=job(id); const patch={etapa:v}; if(EN_PROCESO.includes(v)&&j&&!j.fechaPostulacion) patch.fechaPostulacion=nowISO(); guardarJob(id,patch).catch(()=>{}); },
+  postJob(el){ S.post.jobId=el.value; render(); }, postCv(el){ S.post.cvId=el.value; render(); },
+  async check(el){ const j=job(S.post.jobId); if(!j) return; const k=el.dataset.k, v=el.checked; const pk=await paquete(j.id); const ck=Object.assign({},pk.check||{},{[k]:v}); guardarPaquete(j.id,{check:ck}).catch(()=>{}); },
+  evFile(el){ agregarImgs(Array.from(el.files||[])); el.value=''; },
+  iaModo(el){ STORE.ia.modo=el.value; guardarStore(); render(); },
+  importar(el){ const f=el.files&&el.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>importarRespaldo(String(r.result)); r.readAsText(f); el.value=''; }
+};
+
+/* ---------- Evaluaciones: envío ---------- */
+function agregarImgs(files){ const lim=(imagenesOk()?{maxCount:4,maxInputBytes:20000000,mediaTypes:['image/png','image/jpeg','image/webp']}:null); if(!lim){ toast('Para enviar capturas a la app usa la IA local o Gemini (Ajustes). Con copiar y pegar, adjunta la captura directamente en ChatGPT o Gemini.','bad'); return; } files.filter(f=>/^image\//.test(f.type)).forEach(f=>{ if(S.ev.files.length>=lim.maxCount){ return; } if(f.size>lim.maxInputBytes){ toast('Esa imagen es demasiado grande.','bad'); return; } S.ev.files.push({file:f,url:URL.createObjectURL(f)}); }); render(); }
+async function enviarEval(texto,files){
+  if(S.busy.ev) return; const turns=S.ev.turns; turns.push({role:'user',content:texto,imgs:files.length||0}); const borrador=S.d['ev:in']; delete S.d['ev:in']; const previas=S.ev.files; S.ev.files=[]; S.ev.scroll=true;
+  const p=P(); const intro='Eres el coach de evaluaciones laborales de '+(p.nombre||nombreP())+', que busca trabajo remoto desde República Dominicana. Ayudas a preparar y entender pruebas de selección: inglés (SHL, Versant, EF SET), gramática y redacción, data entry y exactitud, soporte al cliente por escrito, juicio situacional, Excel básico, mecanografía y pruebas de conducta (Predictive Index, DISC: no tienen respuestas correctas; aconseja responder con sinceridad y coherencia). Con capturas: explica qué pide la pregunta, el concepto y cómo razonarlo, y da la respuesta con su explicación. Si la captura muestra una prueba supervisada que prohíbe ayuda externa, recuérdalo en una línea. Responde en español, claro y breve; escribe en inglés los ejercicios que son en inglés. Sin tablas ni markdown pesado.\n\nPerfil:\n'+(p.titular||'')+'\n\nCV (resumen):\n'+cvPrincipal().slice(0,3500);
+  const hist=turns.slice(-12).map(t=>({role:t.role,content:t.content}));
+  const input=[{role:'user',content:intro}].concat(hist);
+  render();
+  const r=await preguntar('ev',input,{images:files});
+  if(r){ turns.push({role:'assistant',content:r.trim()}); previas.forEach(f=>URL.revokeObjectURL(f.url)); }
+  else { turns.pop(); S.ev.files=previas.concat(S.ev.files); if(borrador!=null) S.d['ev:in']=borrador; }
+  S.ev.scroll=true; render();
+}
+document.addEventListener('paste',e=>{ if(S.tab!=='evaluaciones') return; const files=Array.from((e.clipboardData&&e.clipboardData.files)||[]).filter(f=>/^image\//.test(f.type)); if(files.length){ e.preventDefault(); agregarImgs(files); } });
+
+/* ---------- Prompts ---------- */
+function promptAnalisis(texto,url,fuente,li){
+  return 'Analiza esta vacante para '+nombreP()+' según sus reglas. Hoy es '+hoy()+'.\n\n'+ctxPerfil()+'\n\nCV BASE (para medir encaje):\n'+cvPrincipal().slice(0,6000)+'\n\nVACANTE (enlace: '+(url||'no indicado')+'; dónde se encontró: '+(fuente||'no indicado')+'; postulantes en LinkedIn: '+(li||'no indicado')+'):\n'+String(texto).slice(0,18000)+'\n\n'+HORAS+'\n\nDevuelve SOLO un objeto JSON con estas claves (valores en español y breves; si un dato no aparece en el anuncio escribe "No indicado"; no inventes):\n{"puesto":"","empresa":"","elegibilidad":"si acepta candidatos en República Dominicana y en qué te basas","modalidad":"","canal":"no-voz | voz | mixto | desconocido","canalDetalle":"qué canales menciona","carga":"BAJA | MODERADA | ALTA | DESCONOCIDA","pago":"pago publicado tal cual, más el supuesto de conversión si lo hay","pagoHora":null,"contrato":"","horarioRD":"horario convertido a hora de RD","funciones":"","requisitos":"","brechas":"requisitos que la persona no cumple según su CV","encaje":"por qué encaja, citando experiencia real","publicada":"","fechaLimite":"","prioridad":3,"recomendacion":"pendiente | excluida","motivoEstado":"una línea","reglas":[{"regla":"nombre corto de la regla","resultado":"cumple | no cumple | no se sabe","detalle":"en qué te basas"}]}\n\nEn "reglas" revisa una por una sus reglas (máximo 8; incluye siempre canal, país, pago y tipo de puesto).\nCriterios: "excluida" si incumple una regla dura (incluye llamadas o voz; no acepta República Dominicana; pago claramente por debajo del mínimo; pide pagar algo; exige experiencia obligatoria que no tiene; empresa excluida en sus reglas; LinkedIn con 10 o más postulantes). En otro caso "pendiente". Nunca uses "verificada": eso lo marca la persona al abrir el formulario original. pagoHora: número solo si el pago publicado lo permite (anual ÷ 2080; mensual ÷ 173.3); si no, null. prioridad: 1 = encaja muy bien y cumple todo; 4 = encaje débil. carga: BAJA = tareas simples y repetitivas con poca presión; ALTA = metas agresivas, ritmo alto, muchas responsabilidades; DESCONOCIDA si el anuncio no da para saberlo.';
+}
+function promptAnalisisDoble(texto,url,fuente,li,perfiles){
+  const bloques=perfiles.map(d=>{ const p=d.profile||{}; const nm=(PERFILES.find(x=>x.id===d.id)||{}).nombre; return '=== PERFIL "'+d.id+'" ('+(p.nombre||nm)+') ===\nREGLAS:\n'+(p.reglas||'(sin reglas)')+'\n'+lineaPago(p)+'\nDATOS VERDADEROS FUERA DEL CV:\n'+(p.hechos||'(ninguno)')+'\nCV:\n'+String(d.cv||'(sin CV cargado)').slice(0,5000); }).join('\n\n');
+  return 'Evalúa esta vacante para dos personas que buscan trabajo remoto desde República Dominicana. Cada una tiene SUS PROPIAS reglas: aplica a cada perfil solo sus reglas. Hoy es '+hoy()+'.\n\n'+bloques+'\n\nVACANTE (enlace: '+(url||'no indicado')+'; dónde se encontró: '+(fuente||'no indicado')+'; postulantes en LinkedIn: '+(li||'no indicado')+'):\n'+String(texto).slice(0,18000)+'\n\n'+HORAS+'\n\nDevuelve SOLO un objeto JSON con esta forma (valores en español y breves; si un dato no aparece en el anuncio escribe "No indicado"; no inventes):\n{"vacante":{"puesto":"","empresa":"","elegibilidad":"si acepta candidatos en República Dominicana y en qué te basas","modalidad":"","canal":"no-voz | voz | mixto | desconocido","canalDetalle":"qué canales menciona","carga":"BAJA | MODERADA | ALTA | DESCONOCIDA","pago":"pago publicado tal cual, más el supuesto de conversión si lo hay","pagoHora":null,"contrato":"","horarioRD":"horario convertido a hora de RD","funciones":"","requisitos":"","publicada":"","fechaLimite":""},\n "perfiles":{'+perfiles.map(d=>'"'+d.id+'":{"recomendacion":"pendiente | excluida","motivoEstado":"una línea","reglas":[{"regla":"nombre corto de la regla","resultado":"cumple | no cumple | no se sabe","detalle":"en qué te basas"}],"brechas":"requisitos que no cumple según su CV","encaje":"por qué encaja, citando experiencia real de su CV","prioridad":3}').join(',')+'}}\n\nCriterios: para cada perfil revisa una por una sus reglas (máximo 8 en "reglas"; incluye siempre canal, país, pago y tipo de puesto). "excluida" si incumple una regla dura de ESE perfil; si solo falta información, "no se sabe" y "pendiente". Nunca uses "verificada": eso lo marca la persona al abrir el formulario original. pagoHora: número solo si el pago publicado lo permite (anual ÷ 2080; mensual ÷ 173.3); si no, null. prioridad: 1 = encaja muy bien y cumple todo; 4 = encaje débil. carga: BAJA = tareas simples y repetitivas con poca presión; ALTA = metas agresivas, ritmo alto o muchas responsabilidades; DESCONOCIDA si el anuncio no da para saberlo.';
+}
+function armarJob(r,x){
+  x=x||{}; const pick=k=>r[k]==null?'':String(r[k]).slice(0,4000);
+  const est=r.estado||'pendiente';
+  const filtro=Array.isArray(r.reglas)?r.reglas.slice(0,10).map(f=>({regla:String(f&&f.regla||'').slice(0,120),resultado:String(f&&f.resultado||'').slice(0,20),detalle:String(f&&f.detalle||'').slice(0,300)})):[];
+  return {filtro,puesto:pick('puesto')||'Vacante sin título',empresa:pick('empresa'),estado:est,motivoEstado:pick('motivoEstado'),url:x.url||'',fuente:x.fuente||'',elegibilidad:pick('elegibilidad'),modalidad:pick('modalidad'),canal:pick('canal'),canalDetalle:pick('canalDetalle'),carga:pick('carga'),pago:pick('pago'),pagoHora:typeof r.pagoHora==='number'?Math.round(r.pagoHora*10)/10:null,contrato:pick('contrato'),horarioRD:pick('horarioRD'),funciones:pick('funciones'),requisitos:pick('requisitos'),brechas:pick('brechas'),encaje:pick('encaje'),linkedin:x.li||pick('linkedin'),publicada:pick('publicada'),fechaLimite:pick('fechaLimite'),prioridad:Math.min(4,Math.max(1,parseInt(r.prioridad,10)||3)),descripcion:String(x.texto||'').slice(0,30000),verificacion:est==='verificada'?'Formulario original abierto, revisado a mano el '+hoyCorto():'Sin verificar ('+hoyCorto()+')'};
+}
+function extrasAdd(){ return {url:String(dv('add:url')).trim(),fuente:String(dv('add:fuente')).trim(),li:String(dv('add:li')).trim(),texto:String(dv('add:texto'))}; }
+function promptAdaptar(j,c){
+  return 'Adapta el CV BASE de '+nombreP()+' a esta VACANTE para pasar filtros ATS y convencer a un reclutador.\n\n'+HONESTIDAD+'\n\n'+ctxPerfil()+'\n\nVACANTE:\n'+txtVacante(j)+'\n\nCV BASE:\n'+c.contenido+'\n\nINSTRUCCIONES:\n- Escribe el CV en el idioma de la vacante (en inglés si el anuncio está en inglés).\n- Usa exactamente este formato de marcas: "# Nombre"; una línea de titular; una línea de contacto; "## SECCIÓN"; "### Cargo — Empresa"; una línea con fechas y lugar; viñetas con "- "; **negritas** solo en etiquetas de habilidades.\n- Titular y resumen orientados a este puesto; habilidades ordenadas por relevancia; en cada empleo, primero las viñetas que más se relacionan con la vacante. Conserva todos los empleos, fechas y la educación.\n- Máximo 2 páginas. Sin tablas, columnas ni emojis.\n\nResponde exactamente con estas 4 partes y nada más:\n===CV===\n(el CV adaptado)\n===CAMBIOS===\n(3 a 6 viñetas en español: qué cambiaste y por qué)\n===PALABRAS CLAVE===\nCubiertas: …\nFaltan (no se agregaron porque no son ciertas): …\n===BRECHAS===\n(viñetas en español: requisitos que no cumple y cómo responder con honestidad si se los preguntan)';
+}
+function promptVariante(c,enfoque){
+  return 'Crea una versión del CV de '+nombreP()+' enfocada en: '+enfoque+'.\n\n'+HONESTIDAD+'\n\n'+ctxPerfil()+'\n\nCV BASE:\n'+c.contenido+'\n\nINSTRUCCIONES: mismo idioma del CV base; mismo formato de marcas ("# Nombre", titular, contacto, "## SECCIÓN", "### Cargo — Empresa", línea de fechas, viñetas "- ", **negritas** solo en etiquetas). Titular, resumen y habilidades orientados al enfoque; en cada empleo primero las viñetas relacionadas. Conserva todos los empleos, fechas y la educación. Máximo 2 páginas.\n\nResponde exactamente con:\n===CV===\n(el CV)\n===CAMBIOS===\n(3 a 5 viñetas en español)';
+}
+function promptImportar(t){
+  return 'Convierte este CV pegado al formato de marcas de la app, sin agregar, quitar ni cambiar hechos (solo corrige errores de ortografía evidentes y ordena).\nFormato: "# Nombre completo"; una línea de titular; una línea de contacto (ciudad | teléfono | email | LinkedIn si aparecen); "## SUMMARY" o "## RESUMEN" según el idioma; "## SKILLS"; "## EXPERIENCE"; cada empleo como "### Cargo — Empresa" seguido de una línea con fechas y lugar, y viñetas "- "; "## EDUCATION"; otras secciones si existen. **negritas** solo en etiquetas de habilidades. Mantén el idioma original.\n\nCV PEGADO:\n'+t.slice(0,30000)+'\n\nResponde exactamente con:\n===CV===\n(el CV)\n===NOTAS===\n(en español: datos que parecen faltar, como fechas o empresas, para que la persona los complete; escribe "Nada" si está completo)';
+}
+function promptCarta(j,c,extra){
+  return 'Escribe una carta de presentación de '+nombreP()+' para esta VACANTE.\n\n'+HONESTIDAD+'\n\n- Idioma de la vacante. 170 a 250 palabras, 3 o 4 párrafos, tono profesional y cercano. Evita frases gastadas como "I am writing to express my interest", "passionate", "dynamic", "fast-paced".\n- Primer párrafo: el puesto y la razón concreta por la que encaja. Párrafos centrales: 2 o 3 experiencias o logros reales del CV que responden a lo que pide la vacante. Cierre: trabaja en remoto desde República Dominicana, disponibilidad y una invitación breve a conversar.\n- Si el anuncio da instrucciones para la carta (una palabra clave, una pregunta, un formato), cúmplelas.\n- Firma con el nombre. Sin dirección ni fecha arriba.\n- Indicaciones extra de la persona: '+(extra||'ninguna')+'\n\n'+ctxPerfil()+'\n\nCV:\n'+c.contenido+'\n\nVACANTE:\n'+txtVacante(j)+'\n\nResponde solo con la carta.';
+}
+function promptRespuestas(j,c,q){
+  return 'Redacta las respuestas de '+nombreP()+' a estas preguntas del formulario de aplicación.\n\n'+HONESTIDAD+'\n\n- Primera persona, en el idioma de las preguntas, concretas (2 a 5 frases salvo que pidan más).\n- Para preguntas de datos (expectativa salarial, disponibilidad, horario, años de experiencia, autorización de trabajo, ubicación): da la respuesta que corresponde según el perfil y agrega debajo una línea [Confirma: …] en español si algo depende de la persona. Expectativa salarial: usa el pago ideal del perfil (o un rango que termine en él), nunca por debajo del mínimo. Ubicación: República Dominicana, trabajo remoto.\n- Numera las respuestas igual que las preguntas.\n\n'+ctxPerfil()+'\n\nCV:\n'+c.contenido+'\n\nVACANTE:\n'+txtVacante(j)+'\n\nPREGUNTAS:\n'+q;
+}
+function cvPara(j){ const pk=S.paquetes[j.id]||{}; const c=(pk.cvAjustadoId&&cv(pk.cvAjustadoId)); return c?c.contenido:cvPrincipal(); }
+function promptRec(t,j,c,ctx){
+  const comun='\n\n'+ctxPerfil()+'\n\nCV:\n'+c.slice(0,9000)+'\n\nVACANTE:\n'+txtVacante(j)+'\n\nCONTEXTO QUE DA LA PERSONA:\n'+(ctx||'(ninguno)')+'\n\nHoy es '+hoy()+'. '+HORAS;
+  const m={
+    entrevista:'Prepara a '+nombreP()+' para la entrevista de este puesto. Incluye: 1) Resumen del puesto y lo que más le importa al empleador, solo con lo que dice la vacante (no inventes datos de la empresa). 2) Las 10 preguntas más probables, incluyendo "Tell me about yourself", por qué este puesto, experiencia con lo que piden, una situacional, sus brechas, pago y horario; para cada una una respuesta sugerida en el idioma de la entrevista (inglés si la vacante está en inglés), en primera persona, con el método STAR cuando aplique y solo con experiencia real del CV. 3) 5 preguntas inteligentes para hacerle al reclutador. 4) Lista breve para una entrevista remota (internet, audio, cámara, documentos a mano). Explicaciones en español.',
+    reclutador:'Primero, en 1 a 3 líneas en español, revisa señales de estafa en el mensaje (pedir pagos, cursos o certificados pagados, contacto solo por WhatsApp o Telegram, correos de dominios gratuitos o raros, pedir cédula o datos bancarios antes de una oferta formal, contratar sin entrevista, pago muy por encima o por debajo de lo normal). Luego escribe un borrador de respuesta en el idioma del mensaje, breve y profesional, que pida lo que falte saber según las reglas (canal sin llamadas, pago, horario, país). Termina con una línea en español: qué hacer después.',
+    estafa:'Evalúa en español si este mensaje u oferta parece una estafa. Da un veredicto claro (Probable estafa / Dudoso / Parece legítimo), las señales concretas que encuentras citando partes breves del mensaje, qué verificar (dominio del correo, sitio oficial de la empresa, LinkedIn del reclutador) y qué NO hacer (pagar, enviar cédula o datos bancarios antes de un contrato verificable).',
+    seguimiento:'Escribe un correo de seguimiento breve (60 a 110 palabras) para esta postulación, en el idioma de la vacante, cordial y concreto, que recuerde el puesto y 1 punto fuerte real. Incluye una línea "Asunto:". Agrega al final una línea en español sobre cuándo enviarlo (normalmente 5 a 7 días hábiles después de postular).',
+    agradecimiento:'Escribe una nota de agradecimiento después de la entrevista (80 a 130 palabras), en el idioma de la vacante, que mencione algo concreto de la conversación si el contexto lo da y refuerce el encaje con experiencia real. Incluye "Asunto:". Indica en español: enviarla en las primeras 24 horas.',
+    negociacion:'Prepara un guion en español para hablar de pago, con las frases para decir en el idioma de la vacante. Objetivo: el pago ideal del perfil, sin bajar del mínimo. Incluye: cuánto es por hora, por mes (173.3 h) y por año (2080 h); 3 frases para dar su cifra con seguridad; cómo responder si ofrecen menos; qué preguntar (frecuencia y método de pago, si las horas están garantizadas, quién pone el equipo, contrato o freelance); y qué no aceptar nunca (pagar por equipo, cursos o certificados para empezar).'
+  };
+  return (m[t]||m.entrevista)+comun;
+}
+
+/* ---------- Eventos ---------- */
+document.addEventListener('click',e=>{ const el=e.target.closest('[data-act]'); if(!el) return; const f=ACT[el.dataset.act]; if(!f) return; if(el.dataset.act==='fondoModal'){ f(el,e); return; } if(el.tagName!=='A') e.preventDefault(); if(el.disabled) return; f(el,e); });
+document.addEventListener('input',e=>{ const t=e.target; if(t.dataset.bind){ S.d[t.dataset.bind]=t.type==='checkbox'?t.checked:t.value; if(t.tagName==='SELECT') render(); } if(t.dataset.input==='q'){ S.q=t.value; render(); } });
+document.addEventListener('change',e=>{ const t=e.target; if(t.dataset.bind&&t.type==='checkbox'){ S.d[t.dataset.bind]=t.checked; } const a=t.dataset.change; if(a&&CHANGE[a]) CHANGE[a](t); if(S.renderLuego){ S.renderLuego=false; setTimeout(render,0); } });
+document.addEventListener('pointerdown',()=>{ puntero=true; },true);
+document.addEventListener('pointerup',()=>{ puntero=false; if(S.renderLuego){ setTimeout(()=>{ if(!puntero&&S.renderLuego){ S.renderLuego=false; render(); } },60); } },true);
+document.addEventListener('focusout',()=>{ setTimeout(()=>{ const a=document.activeElement; if(S.renderLuego&&!puntero&&!(a&&a.tagName==='SELECT')){ S.renderLuego=false; render(); } },120); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&S.modal){ if(S.copiar){ cerrarCopiar(null); return; } S.modal=null; render(); } });
+window.addEventListener('hashchange',()=>{ const t=(location.hash||'').slice(1); if(TABS.some(x=>x[0]===t)&&t!==S.tab){ S.tab=t; render(); } });
+window.addEventListener('resize',()=>{ clearTimeout(window.__rz); window.__rz=setTimeout(render,200); });
+
+/* ---------- Arranque ---------- */
+async function iniciar(){
+  construir(); render();
+  try{ const r=await fetch('data/vacantes.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); S.data=await r.json(); }
+  catch(e){ S.dataError=String(e.message||e); }
+  S.ready=true; construir(); render();
+}
+iniciar();
+</script>
+</body>
+</html>

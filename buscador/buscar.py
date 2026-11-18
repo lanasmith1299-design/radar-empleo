@@ -1,0 +1,598 @@
+#!/usr/bin/env python3
+"""Radar de Empleo (versión libre): busca vacantes remotas en bolsas con API pública
+gratuita, aplica las reglas de cada perfil y guarda docs/data/vacantes.json.
+También envía un aviso al teléfono con ntfy.
+
+Solo usa la biblioteca estándar de Python: no hay que instalar nada.
+
+Variables de entorno opcionales:
+  NTFY_LUZ, NTFY_CRISTIAN   nombre secreto del tema de ntfy de cada perfil
+  RADAR_FIXTURES            carpeta con respuestas guardadas (para pruebas sin internet)
+  RADAR_SIN_AVISOS=1        no enviar avisos (pruebas)
+"""
+import datetime as dt
+import email.utils
+import html
+import json
+import os
+import re
+import sys
+import time
+import unicodedata
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+
+RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG = os.path.join(RAIZ, "config", "perfiles.json")
+SALIDA = os.path.join(RAIZ, "docs", "data", "vacantes.json")
+FIXTURES = os.environ.get("RADAR_FIXTURES")
+AHORA = dt.datetime.now(dt.timezone.utc)
+UA = "RadarEmpleoLibre/1.0 (busqueda personal de empleo; contacto via GitHub)"
+DIAS_HISTORIAL = 21
+
+
+# ---------------------------------------------------------------- utilidades
+def norm(texto):
+    """Minúsculas, sin acentos, espacios simples."""
+    t = unicodedata.normalize("NFD", str(texto or "")).encode("ascii", "ignore").decode()
+    return re.sub(r"\s+", " ", t.lower()).strip()
+
+
+def limpiar_html(texto):
+    t = re.sub(r"<(br|/p|/li|/h\d)[^>]*>", "\n", str(texto or ""), flags=re.I)
+    t = re.sub(r"<li[^>]*>", "\n- ", t, flags=re.I)
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = html.unescape(t)
+    t = re.sub(r"[ \t\r\f\v]+", " ", t)
+    t = re.sub(r"\n\s*\n+", "\n\n", t)
+    return t.strip()
+
+
+def slug(texto):
+    return re.sub(r"[^a-z0-9]+", "-", norm(texto)).strip("-")[:80] or "vacante"
+
+
+def contiene(texto_norm, palabras):
+    return [p for p in palabras if norm(p) and norm(p) in texto_norm]
+
+
+def pedir(url, nombre_fixture=None, json_esperado=True, intentos=2):
+    """Descarga una URL (o lee una respuesta guardada si RADAR_FIXTURES está definido)."""
+    if FIXTURES:
+        ruta = os.path.join(FIXTURES, nombre_fixture or "")
+        if not nombre_fixture or not os.path.exists(ruta):
+            raise FileNotFoundError("sin fixture " + str(nombre_fixture))
+        with open(ruta, encoding="utf-8") as f:
+            data = f.read()
+        return json.loads(data) if json_esperado else data
+    ultimo = None
+    for i in range(intentos):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json, application/rss+xml, */*"})
+            with urllib.request.urlopen(req, timeout=40) as r:
+                data = r.read().decode("utf-8", "replace")
+            return json.loads(data) if json_esperado else data
+        except Exception as e:  # noqa: BLE001
+            ultimo = e
+            time.sleep(3 * (i + 1))
+    raise ultimo
+
+
+def a_fecha(valor):
+    """Convierte fechas de distintos formatos a datetime UTC."""
+    if valor in (None, ""):
+        return None
+    try:
+        if isinstance(valor, (int, float)) or re.fullmatch(r"\d{9,13}", str(valor)):
+            n = float(valor)
+            if n > 1e12:
+                n /= 1000
+            return dt.datetime.fromtimestamp(n, dt.timezone.utc)
+        s = str(valor).strip()
+        if re.match(r"\d{4}-\d{2}-\d{2}", s):
+            s = s.replace("Z", "+00:00")
+            d = dt.datetime.fromisoformat(s[:25]) if "T" in s else dt.datetime.fromisoformat(s[:10])
+            return d if d.tzinfo else d.replace(tzinfo=dt.timezone.utc)
+        d = email.utils.parsedate_to_datetime(s)
+        return d if d.tzinfo else d.replace(tzinfo=dt.timezone.utc)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# ---------------------------------------------------------------- pago
+def _a_hora(valor, periodo):
+    if valor is None:
+        return None
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0:
+        return None
+    periodo = norm(periodo)
+    if periodo.startswith("hour") or periodo in ("h", "hr", "hora"):
+        return v
+    if periodo.startswith("month") or periodo in ("mo", "mes"):
+        return v / 173.3
+    if periodo.startswith("week"):
+        return v / 40
+    if periodo.startswith("day"):
+        return v / 8
+    # anual por defecto; si es un número pequeño probablemente es por hora
+    if v < 200:
+        return v
+    if v < 15000:
+        return v / 173.3
+    return v / 2080
+
+
+PAT_PAGO = re.compile(
+    r"(?:\$|usd ?|us\$ ?)\s?(\d[\d,]*(?:\.\d+)?)\s?(k)?"
+    r"(?:\s?(?:-|to|a)\s?(?:\$|usd ?|us\$ ?)?\s?(\d[\d,]*(?:\.\d+)?)\s?(k)?)?([^\n$]{0,40})")
+CONTEXTO_PAGO = re.compile(r"salary|pay|compensation|rate|wage|per hour|hourly|/ ?hr|/ ?hour|a year|per year|annual|per month|monthly|/ ?mo|usd|sueldo|salario|pago")
+
+
+def _num(s, k):
+    n = float(s.replace(",", ""))
+    return n * 1000 if k else n
+
+
+def pago_desde_texto(texto, exigir_contexto=False):
+    """Devuelve (min_hora, max_hora) desde un texto como '$15-20/hr', 'USD 45k - 60k a year' o '$2,000/month'."""
+    t = str(texto or "").replace("–", "-").replace("—", "-")
+    t = norm(t)
+    if not t:
+        return None, None
+    for m in PAT_PAGO.finditer(t):
+        antes = t[max(0, m.start() - 60):m.start()]
+        cola = m.group(5) or ""
+        if exigir_contexto and not CONTEXTO_PAGO.search(antes + " " + m.group(0)):
+            continue
+        if re.search(r"stipend|bonus|equipment|referral|reimburse", antes[-40:] + cola):
+            continue
+        nums = [_num(m.group(1), m.group(2))]
+        if m.group(3):
+            nums.append(_num(m.group(3), m.group(4) or m.group(2)))
+        contexto = cola + " " + antes[-25:]
+        if re.search(r"/ ?h(ou)?r|per hour|hourly|an hour|/ ?h\b|/hora|por hora", contexto):
+            periodo = "hour"
+        elif re.search(r"/ ?mo|per month|monthly|a month|/mes|mensual", contexto):
+            periodo = "month"
+        elif re.search(r"/ ?w(ee)?k|per week|weekly", contexto):
+            periodo = "week"
+        else:
+            periodo = "year"
+        horas = [h for h in (_a_hora(n, periodo) for n in nums) if h]
+        if horas:
+            return round(min(horas), 1), round(max(horas), 1)
+    return None, None
+
+
+# ---------------------------------------------------------------- fuentes
+def fuente_remotive():
+    """Remotive pide máximo 4 consultas al día y mencionar la fuente. Hacemos 2."""
+    vistos = {}
+    for nombre, url in (("remotive-cs.json", "https://remotive.com/api/remote-jobs?category=customer-support"),
+                        ("remotive-data.json", "https://remotive.com/api/remote-jobs?search=data%20entry")):
+        data = pedir(url, nombre)
+        for j in data.get("jobs", []):
+            vistos[j.get("id")] = {
+                "fuente": "Remotive",
+                "url": j.get("url"),
+                "puesto": j.get("title"),
+                "empresa": j.get("company_name"),
+                "ubicacion": j.get("candidate_required_location") or "",
+                "pago_texto": j.get("salary") or "",
+                "publicada": j.get("publication_date"),
+                "tipo": j.get("job_type") or "",
+                "categoria": j.get("category") or "",
+                "descripcion": j.get("description") or "",
+            }
+    return list(vistos.values())
+
+
+def fuente_himalayas(busquedas):
+    vistos = {}
+    for i, q in enumerate(busquedas[:6]):
+        params = urllib.parse.urlencode({"q": q, "country": "DO", "sort": "recent"})
+        try:
+            data = pedir("https://himalayas.app/jobs/api/search?" + params, "himalayas-%d.json" % i)
+        except FileNotFoundError:
+            continue
+        jobs = data.get("jobs") if isinstance(data, dict) else data
+        for j in jobs or []:
+            url = j.get("applicationLink") or j.get("guid") or j.get("url")
+            clave = j.get("guid") or url or (j.get("title"), j.get("companyName"))
+            ubic = j.get("locationRestrictions") or []
+            if isinstance(ubic, list):
+                ubic_txt = ", ".join(str(x.get("name") if isinstance(x, dict) else x) for x in ubic) or "Worldwide"
+            else:
+                ubic_txt = str(ubic)
+            pmin, pmax = j.get("minSalary"), j.get("maxSalary")
+            moneda = j.get("currency") or j.get("salaryCurrency") or ""
+            periodo = j.get("salaryPeriod") or "annual"
+            vistos[clave] = {
+                "fuente": "Himalayas",
+                "url": url,
+                "puesto": j.get("title"),
+                "empresa": j.get("companyName") or j.get("company"),
+                "ubicacion": ubic_txt,
+                "pago_min_hora": _a_hora(pmin, periodo) if norm(moneda) in ("usd", "") else None,
+                "pago_max_hora": _a_hora(pmax, periodo) if norm(moneda) in ("usd", "") else None,
+                "pago_texto": ("%s %s–%s (%s)" % (moneda, pmin, pmax, periodo)) if (pmin or pmax) else "",
+                "publicada": j.get("pubDate"),
+                "tipo": j.get("employmentType") or "",
+                "categoria": ", ".join(j.get("categories") or []) if isinstance(j.get("categories"), list) else str(j.get("categories") or ""),
+                "descripcion": j.get("description") or j.get("excerpt") or "",
+            }
+        time.sleep(0 if FIXTURES else 2)
+    return list(vistos.values())
+
+
+def fuente_jobicy():
+    out = []
+    for nombre, url in (("jobicy-supporting.json", "https://jobicy.com/api/v2/remote-jobs?count=100&industry=supporting"),
+                        ("jobicy-latam.json", "https://jobicy.com/api/v2/remote-jobs?count=100&geo=latam")):
+        try:
+            data = pedir(url, nombre)
+        except FileNotFoundError:
+            continue
+        for j in data.get("jobs", []):
+            moneda = j.get("salaryCurrency") or ""
+            periodo = j.get("salaryPeriod") or "annual"
+            pmin, pmax = j.get("annualSalaryMin") or j.get("salaryMin"), j.get("annualSalaryMax") or j.get("salaryMax")
+            out.append({
+                "fuente": "Jobicy",
+                "url": j.get("url"),
+                "puesto": html.unescape(str(j.get("jobTitle") or "")),
+                "empresa": j.get("companyName"),
+                "ubicacion": j.get("jobGeo") or "",
+                "pago_min_hora": _a_hora(pmin, periodo) if norm(moneda) in ("usd", "") else None,
+                "pago_max_hora": _a_hora(pmax, periodo) if norm(moneda) in ("usd", "") else None,
+                "pago_texto": ("%s %s–%s (%s)" % (moneda, pmin, pmax, periodo)) if (pmin or pmax) else "",
+                "publicada": j.get("pubDate"),
+                "tipo": ", ".join(j.get("jobType") or []) if isinstance(j.get("jobType"), list) else str(j.get("jobType") or ""),
+                "categoria": ", ".join(j.get("jobIndustry") or []) if isinstance(j.get("jobIndustry"), list) else str(j.get("jobIndustry") or ""),
+                "descripcion": j.get("jobDescription") or j.get("jobExcerpt") or "",
+            })
+    return out
+
+
+def fuente_remoteok():
+    data = pedir("https://remoteok.com/api", "remoteok.json")
+    out = []
+    for j in data if isinstance(data, list) else []:
+        if not isinstance(j, dict) or not j.get("position"):
+            continue
+        out.append({
+            "fuente": "Remote OK",
+            "url": j.get("url") or j.get("apply_url"),
+            "puesto": j.get("position"),
+            "empresa": j.get("company"),
+            "ubicacion": j.get("location") or "",
+            "pago_min_hora": _a_hora(j.get("salary_min"), "annual"),
+            "pago_max_hora": _a_hora(j.get("salary_max"), "annual"),
+            "pago_texto": ("USD %s–%s al año" % (j.get("salary_min"), j.get("salary_max"))) if j.get("salary_min") else "",
+            "publicada": j.get("date") or j.get("epoch"),
+            "tipo": "",
+            "categoria": ", ".join(j.get("tags") or []),
+            "descripcion": j.get("description") or "",
+        })
+    return out
+
+
+def fuente_wwr():
+    out = []
+    for nombre, url in (("wwr-cs.xml", "https://weworkremotely.com/categories/remote-customer-support-jobs.rss"),
+                        ("wwr-otros.xml", "https://weworkremotely.com/categories/all-other-remote-jobs.rss")):
+        try:
+            xml = pedir(url, nombre, json_esperado=False)
+        except FileNotFoundError:
+            continue
+        raiz = ET.fromstring(xml)
+        for it in raiz.iter("item"):
+            titulo = it.findtext("title") or ""
+            empresa, _, puesto = titulo.partition(":")
+            if not puesto:
+                empresa, puesto = "", titulo
+            out.append({
+                "fuente": "We Work Remotely",
+                "url": it.findtext("link"),
+                "puesto": puesto.strip(),
+                "empresa": empresa.strip(),
+                "ubicacion": it.findtext("region") or it.findtext("country") or "",
+                "pago_texto": "",
+                "publicada": it.findtext("pubDate"),
+                "tipo": it.findtext("type") or "",
+                "categoria": it.findtext("category") or "",
+                "descripcion": it.findtext("description") or "",
+            })
+    return out
+
+
+def fuente_workingnomads():
+    data = pedir("https://www.workingnomads.com/api/exposed_jobs/", "workingnomads.json")
+    out = []
+    for j in data if isinstance(data, list) else []:
+        cat = norm(j.get("category_name"))
+        if not any(c in cat for c in ("customer", "support", "administration", "admin", "operations", "data")):
+            continue
+        out.append({
+            "fuente": "Working Nomads",
+            "url": j.get("url"),
+            "puesto": j.get("title"),
+            "empresa": j.get("company_name"),
+            "ubicacion": j.get("location") or "",
+            "pago_texto": "",
+            "publicada": j.get("pub_date"),
+            "tipo": "",
+            "categoria": j.get("category_name") or "",
+            "descripcion": j.get("description") or "",
+        })
+    return out
+
+
+# ---------------------------------------------------------------- reglas
+def regla(nombre, resultado, detalle):
+    return {"regla": nombre, "resultado": resultado, "detalle": detalle}
+
+
+IDIOMA_REQ = r"(fluent|fluency|native|proficien\w*|bilingual)[^.\n]{0,40}\b{l}\b|\b{l}\b[^.\n]{0,25}(required|speaker|speaking|fluency|native|mandatory|is a must)"
+
+
+def evaluar(v, perfil, comunes):
+    titulo = " " + norm(v["puesto"]) + " "
+    texto = norm(" ".join([v["puesto"], v.get("categoria", ""), v.get("tipo", ""), v["descripcion_txt"]]))
+    ubic = norm(v.get("ubicacion"))
+    filtro, duras, dudas = [], [], []
+
+    # tipo de puesto
+    no_t = contiene(titulo, perfil["titulo_no"])
+    si_t = contiene(titulo, perfil["titulo_si"])
+    if no_t:
+        filtro.append(regla("Tipo de puesto", "no cumple", "El título dice: " + ", ".join(no_t[:3])))
+        duras.append("tipo de puesto (" + no_t[0].strip() + ")")
+    elif si_t:
+        filtro.append(regla("Tipo de puesto", "cumple", "El título coincide con: " + ", ".join(si_t[:3])))
+    else:
+        filtro.append(regla("Tipo de puesto", "no cumple", "El título no parece de los puestos que buscas"))
+        duras.append("tipo de puesto")
+
+    # voz
+    voz = contiene(texto, perfil["voz_no"])
+    if voz and contiene(texto, comunes.get("sin_voz_marcas", [])):
+        # el anuncio aclara que no hay llamadas: solo cuentan las señales fuertes
+        voz = [x for x in voz if x in comunes.get("voz_fuerte", [])]
+    if voz:
+        filtro.append(regla("Sin llamadas", "no cumple", "Menciona: " + ", ".join(voz[:3])))
+        duras.append("incluye llamadas")
+    else:
+        canales = contiene(texto, perfil.get("canales_si", []))
+        if canales:
+            filtro.append(regla("Sin llamadas", "cumple", "Canales escritos: " + ", ".join(canales[:3]) + "; no menciona teléfono"))
+        elif perfil.get("canales_obligatorios"):
+            filtro.append(regla("Sin llamadas", "no cumple", "No dice si es por chat, email o tickets"))
+            duras.append("no nombra los canales")
+        else:
+            filtro.append(regla("Sin llamadas", "no se sabe", "No menciona teléfono ni canales"))
+            dudas.append("canal no indicado")
+
+    # país
+    pais_no = contiene(" " + ubic + " " + texto + " ", comunes["pais_no"])
+    pais_si = contiene(ubic, comunes["pais_si"]) or (["worldwide"] if not ubic else [])
+    if pais_no:
+        filtro.append(regla("Acepta RD", "no cumple", "Dice: " + pais_no[0]))
+        duras.append("país (" + pais_no[0] + ")")
+    elif "dominican" in ubic or "caribbean" in ubic:
+        filtro.append(regla("Acepta RD", "cumple", "Ubicación: " + v.get("ubicacion", "")))
+    elif pais_si:
+        if contiene(ubic, comunes["pais_dudoso"]):
+            filtro.append(regla("Acepta RD", "no se sabe", "Dice " + v.get("ubicacion", "") + "; confirma que incluya a RD"))
+            dudas.append("confirmar que acepten RD")
+        else:
+            filtro.append(regla("Acepta RD", "cumple", "Ubicación: " + (v.get("ubicacion") or "sin restricción")))
+    else:
+        filtro.append(regla("Acepta RD", "no cumple", "Limitada a: " + v.get("ubicacion", "")))
+        duras.append("país (" + v.get("ubicacion", "") + ")")
+
+    # pago
+    pmin, pmax = v.get("pago_min_hora"), v.get("pago_max_hora")
+    minimo = perfil.get("pago_min_hora") or 0
+    if pmax:
+        if minimo and pmax < minimo and v.get("pago_origen") == "descripcion":
+            filtro.append(regla("Pago", "no se sabe", "El texto parece decir unos US$%.1f/h; confírmalo" % pmax))
+            dudas.append("pago posiblemente bajo")
+        elif minimo and pmax < minimo:
+            filtro.append(regla("Pago", "no cumple", "Hasta US$%.1f/h; tu mínimo es US$%s/h" % (pmax, minimo)))
+            duras.append("pago bajo")
+        else:
+            filtro.append(regla("Pago", "cumple", "Unos US$%.1f–%.1f/h" % (pmin or pmax, pmax)))
+    else:
+        filtro.append(regla("Pago", "no se sabe", "Pago no publicado"))
+        if minimo:
+            dudas.append("pago no indicado")
+
+    # idiomas
+    malos = [l for l in perfil.get("idiomas_no", []) if re.search(IDIOMA_REQ.replace("{l}", re.escape(l)), texto)]
+    if malos:
+        filtro.append(regla("Idiomas", "no cumple", "Pide " + ", ".join(malos[:2])))
+        duras.append("pide " + malos[0])
+
+    # señales de estafa y empresas excluidas
+    estafa = contiene(texto, comunes["pago_ilegal"])
+    if estafa:
+        filtro.append(regla("Sin pagos ni estafas", "no cumple", "Menciona: " + estafa[0]))
+        duras.append("posible estafa")
+    emp = contiene(norm(v.get("empresa")), perfil.get("excluir_empresas", []))
+    if emp:
+        duras.append("empresa excluida")
+        filtro.append(regla("Empresa", "no cumple", "Empresa excluida en tus reglas"))
+
+    if duras:
+        estado, motivo = "excluida", "No cumple: " + "; ".join(duras[:3])
+    elif dudas:
+        estado, motivo = "revisar", "Cumple lo que se puede ver; falta: " + "; ".join(dudas[:3])
+    else:
+        estado, motivo = "cumple", "Cumple tus filtros; falta abrir el anuncio original y verificar"
+    prioridad = 1 if estado == "cumple" and pmax and pmax >= 15 else 2 if estado == "cumple" else 3 if estado == "revisar" else 4
+    return {"estado": estado, "motivo": motivo, "filtro": filtro, "prioridad": prioridad}
+
+
+# ---------------------------------------------------------------- avisos
+def avisar(tema, titulo, mensaje, clic):
+    if not tema or os.environ.get("RADAR_SIN_AVISOS") or FIXTURES:
+        return False
+    cuerpo = json.dumps({"topic": tema, "title": titulo, "message": mensaje, "click": clic, "tags": ["briefcase"]}).encode("utf-8")
+    req = urllib.request.Request("https://ntfy.sh/", data=cuerpo, headers={"Content-Type": "application/json", "User-Agent": UA})
+    try:
+        urllib.request.urlopen(req, timeout=30).read()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print("No se pudo enviar el aviso:", e, file=sys.stderr)
+        return False
+
+
+def url_pages():
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if "/" in repo:
+        dueno, nombre = repo.split("/", 1)
+        return "https://%s.github.io/%s/" % (dueno.lower(), nombre)
+    return ""
+
+
+# ---------------------------------------------------------------- principal
+def main():
+    with open(CONFIG, encoding="utf-8") as f:
+        cfg = json.load(f)
+    comunes, perfiles = cfg["comunes"], cfg["perfiles"]
+    busquedas = []
+    for p in perfiles.values():
+        for q in p.get("busquedas", []):
+            if q not in busquedas:
+                busquedas.append(q)
+
+    fuentes = {
+        "Remotive": fuente_remotive,
+        "Himalayas": lambda: fuente_himalayas(busquedas),
+        "Jobicy": fuente_jobicy,
+        "Remote OK": fuente_remoteok,
+        "We Work Remotely": fuente_wwr,
+        "Working Nomads": fuente_workingnomads,
+    }
+    crudas, informe = [], {}
+    for nombre, fn in fuentes.items():
+        try:
+            lista = fn()
+            informe[nombre] = {"ok": True, "vacantes": len(lista)}
+            crudas.extend(lista)
+        except Exception as e:  # noqa: BLE001
+            informe[nombre] = {"ok": False, "error": str(e)[:200]}
+            print("Fuente con error:", nombre, e, file=sys.stderr)
+
+    anterior = {}
+    if os.path.exists(SALIDA):
+        try:
+            with open(SALIDA, encoding="utf-8") as f:
+                for v in json.load(f).get("vacantes", []):
+                    anterior[v["id"]] = v
+        except Exception:  # noqa: BLE001
+            anterior = {}
+
+    dias_max = max([comunes.get("dias_maximos", 10)] + [p.get("dias_maximos", 10) for p in perfiles.values()])
+    nuevas = {pid: [] for pid in perfiles}
+    resultado = {}
+    for v in crudas:
+        if not v.get("puesto") or not v.get("url"):
+            continue
+        fecha = a_fecha(v.get("publicada"))
+        if fecha and (AHORA - fecha).days > dias_max:
+            continue
+        v["descripcion_txt"] = limpiar_html(v.get("descripcion"))
+        v["pago_origen"] = "estructurado" if (v.get("pago_min_hora") or v.get("pago_max_hora")) else None
+        if not v["pago_origen"]:
+            v["pago_min_hora"], v["pago_max_hora"] = pago_desde_texto(v.get("pago_texto") or "")
+            v["pago_origen"] = "texto" if v["pago_max_hora"] else None
+            if v["pago_max_hora"] is None:
+                v["pago_min_hora"], v["pago_max_hora"] = pago_desde_texto(v["descripcion_txt"][:4000], exigir_contexto=True)
+                v["pago_origen"] = "descripcion" if v["pago_max_hora"] else None
+        vid = slug((v.get("empresa") or "") + " " + v["puesto"])
+        if vid in resultado:  # misma vacante en dos bolsas
+            continue
+        evals = {}
+        for pid, p in perfiles.items():
+            dias_p = p.get("dias_maximos", dias_max)
+            if fecha and (AHORA - fecha).days > dias_p:
+                continue
+            evals[pid] = evaluar(v, p, comunes)
+        if not evals:
+            continue
+        previo = anterior.get(vid, {})
+        primera = previo.get("vista_primera_vez") or AHORA.isoformat()
+        registro = {
+            "id": vid,
+            "fuente": v["fuente"],
+            "url": v["url"],
+            "puesto": v["puesto"].strip(),
+            "empresa": (v.get("empresa") or "").strip(),
+            "ubicacion": v.get("ubicacion") or "",
+            "pago_texto": v.get("pago_texto") or "",
+            "pago_min_hora": round(v["pago_min_hora"], 1) if v.get("pago_min_hora") else None,
+            "pago_max_hora": round(v["pago_max_hora"], 1) if v.get("pago_max_hora") else None,
+            "pago_origen": v.get("pago_origen"),
+            "tipo": v.get("tipo") or "",
+            "publicada": fecha.isoformat() if fecha else None,
+            "vista_primera_vez": primera,
+            "vista_ultima_vez": AHORA.isoformat(),
+            "descripcion": v["descripcion_txt"][:5000],
+            "perfiles": evals,
+        }
+        resultado[vid] = registro
+        for pid, e in evals.items():
+            if e["estado"] == "cumple" and vid not in anterior:
+                nuevas[pid].append(registro)
+
+    # conservar las vistas en los últimos días aunque ya no salgan hoy
+    for vid, v in anterior.items():
+        if vid in resultado:
+            continue
+        ultima = a_fecha(v.get("vista_ultima_vez"))
+        if ultima and (AHORA - ultima).days <= DIAS_HISTORIAL:
+            v["ya_no_aparece"] = True
+            resultado[vid] = v
+
+    lista = sorted(resultado.values(), key=lambda x: (min((e["prioridad"] for e in x["perfiles"].values()), default=9), -(x.get("pago_max_hora") or 0), x.get("publicada") or ""), reverse=False)
+    salida = {
+        "actualizado": AHORA.isoformat(),
+        "fuentes": informe,
+        "aviso": "Datos de Remotive, Himalayas, Jobicy, Remote OK, We Work Remotely y Working Nomads. Cada vacante enlaza a su fuente.",
+        "vacantes": lista,
+    }
+    os.makedirs(os.path.dirname(SALIDA), exist_ok=True)
+    with open(SALIDA, "w", encoding="utf-8") as f:
+        json.dump(salida, f, ensure_ascii=False, indent=1)
+
+    pagina = url_pages()
+    for pid, p in perfiles.items():
+        conteo = {"cumple": 0, "revisar": 0}
+        for v in lista:
+            e = v["perfiles"].get(pid)
+            if e and e["estado"] in conteo and not v.get("ya_no_aparece"):
+                conteo[e["estado"]] += 1
+        nuevas_p = sorted(nuevas[pid], key=lambda x: -(x.get("pago_max_hora") or 0))
+        print("%s: %d nuevas que cumplen; %d cumplen en total; %d por revisar" % (p["nombre"], len(nuevas_p), conteo["cumple"], conteo["revisar"]))
+        tema = os.environ.get("NTFY_" + pid.upper())
+        if nuevas_p:
+            lineas = ["• %s — %s%s" % (v["puesto"], v["empresa"] or v["fuente"], (" · US$%s/h" % v["pago_max_hora"]) if v.get("pago_max_hora") else "") for v in nuevas_p[:6]]
+            msg = "\n".join(lineas) + ("\n…y %d más" % (len(nuevas_p) - 6) if len(nuevas_p) > 6 else "") + "\nRecuerda verificar cada una en el sitio original."
+            avisar(tema, "Radar: %d vacante%s nueva%s para %s" % (len(nuevas_p), "s" if len(nuevas_p) != 1 else "", "s" if len(nuevas_p) != 1 else "", p["nombre"]), msg, pagina)
+        else:
+            avisar(tema, "Radar: sin vacantes nuevas para %s" % p["nombre"], "Hoy no apareció nada nuevo que cumpla tus filtros. Por revisar: %d." % conteo["revisar"], pagina)
+    fallas = [n for n, i in informe.items() if not i["ok"]]
+    if fallas:
+        print("Fuentes con error:", ", ".join(fallas), file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
