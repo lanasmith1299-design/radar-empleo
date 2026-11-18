@@ -304,7 +304,12 @@
         "copywriter",
         "creator",
         "social media",
-        "video editor"
+        "video editor",
+        "recruiting",
+        "sre",
+        "site reliability",
+        "incident management",
+        "coach"
       ],
       "voz_no": [
         "phone support",
@@ -617,7 +622,12 @@
         "setter",
         "closer",
         "cold call",
-        "talent acquisition"
+        "talent acquisition",
+        "recruiting",
+        "sre",
+        "site reliability",
+        "incident management",
+        "coach"
       ],
       "voz_no": [
         "phone support",

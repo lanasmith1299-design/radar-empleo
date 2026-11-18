@@ -539,6 +539,8 @@ def main():
             if v["pago_max_hora"] is None:
                 v["pago_min_hora"], v["pago_max_hora"] = pago_desde_texto(v["descripcion_txt"][:4000], exigir_contexto=True)
                 v["pago_origen"] = "descripcion" if v["pago_max_hora"] else None
+        if (v.get("pago_max_hora") or 0) > 300:  # dato de pago imposible (error de la bolsa)
+            v["pago_min_hora"], v["pago_max_hora"], v["pago_origen"] = None, None, None
         vid = slug((v.get("empresa") or "") + " " + v["puesto"])
         if vid in resultado:  # misma vacante en dos bolsas
             continue
