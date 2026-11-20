@@ -809,7 +809,12 @@ def main():
             continue
         ultima = a_fecha(v.get("vista_ultima_vez"))
         if ultima and (AHORA - ultima).days <= DIAS_HISTORIAL:
-            v["ya_no_aparece"] = True
+            # si su fuente falló hoy, no sabemos si sigue: no se marca como desaparecida
+            inf = informe.get(v.get("fuente"), {})
+            if not inf.get("ok", True) or inf.get("vacantes") == 0:
+                v.pop("ya_no_aparece", None)
+            else:
+                v["ya_no_aparece"] = True
             # se vuelven a evaluar con las reglas de hoy, por si cambiaron
             # (solo para hacerlas más estrictas: el texto guardado está recortado y
             # podría haber perdido lo que la excluyó)
