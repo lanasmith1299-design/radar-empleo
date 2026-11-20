@@ -368,6 +368,51 @@ def fuente_sagan():
     return out
 
 
+def fuente_ashby(tablero, nombre, region_por_defecto):
+    """Tablero público de Ashby (lo usan varias agencias). Devuelve las vacantes con pago."""
+    url = "https://api.ashbyhq.com/posting-api/job-board/%s?includeCompensation=true" % urllib.parse.quote(tablero)
+    data = pedir(url, "ashby-%s.json" % slug(tablero))
+    out = []
+    for j in data.get("jobs", []):
+        if j.get("isListed") is False:
+            continue
+        texto = j.get("descriptionPlain") or ""
+        m = re.search(r"open to candidates (?:based |located )?in ([^.\n]{3,80})", texto, re.I)
+        if m:
+            ubic = m.group(1).strip()
+        else:
+            lugares = [j.get("location") or ""] + [x.get("location") or "" for x in j.get("secondaryLocations") or []]
+            ubic = ", ".join(x.strip() for x in lugares if x.strip())
+            ubic = (ubic + " — " if ubic else "") + region_por_defecto
+        pmin = pmax = None
+        comp = j.get("compensation") or {}
+        for c in comp.get("summaryComponents") or []:
+            if c.get("compensationType") == "Salary" and norm(c.get("currencyCode") or "usd") == "usd":
+                periodo = {"1 HOUR": "hour", "1 WEEK": "week", "1 MONTH": "month", "1 YEAR": "year"}.get(c.get("interval") or "", "year")
+                pmin, pmax = _a_hora(c.get("minValue"), periodo), _a_hora(c.get("maxValue"), periodo)
+                break
+        out.append({
+            "fuente": nombre,
+            "url": j.get("jobUrl") or j.get("applyUrl"),
+            "puesto": j.get("title"),
+            "empresa": nombre + " (cliente en EE. UU.)",
+            "ubicacion": ubic,
+            "pago_min_hora": pmin,
+            "pago_max_hora": pmax,
+            "pago_texto": comp.get("compensationTierSummary") or "",
+            "publicada": j.get("publishedAt"),
+            "tipo": j.get("employmentType") or "",
+            "categoria": j.get("department") or "",
+            "descripcion": j.get("descriptionHtml") or texto,
+        })
+    return out
+
+
+def fuente_scalearmy():
+    """Scale Army Careers: agencia que contrata en LATAM, África y Europa del Este (tablero de Ashby)."""
+    return fuente_ashby("Scale Army Careers", "Scale Army", "LATAM, Africa, Eastern Europe (Scale Army)")
+
+
 def fuente_workingnomads():
     data = pedir("https://www.workingnomads.com/api/exposed_jobs/", "workingnomads.json")
     out = []
@@ -545,6 +590,7 @@ def main():
         "We Work Remotely": fuente_wwr,
         "Working Nomads": fuente_workingnomads,
         "Sagan Recruitment": fuente_sagan,
+        "Scale Army": fuente_scalearmy,
     }
     crudas, informe = [], {}
     for nombre, fn in fuentes.items():
