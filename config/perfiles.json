@@ -1,5 +1,5 @@
 {
-  "_nota": "Reglas del buscador diario. Puedes editarlas desde GitHub (botón del lápiz). Las palabras se comparan sin importar mayúsculas ni acentos. 18 nov 2026: ampliado a cualquier puesto back office o no-voz de cualquier industria.",
+  "_nota": "Reglas del buscador diario. Puedes editarlas desde GitHub (botón del lápiz). Las palabras se comparan sin importar mayúsculas ni acentos. 18 nov 2026: ampliado a cualquier puesto back office o no-voz de cualquier industria. 20 nov 2026: se excluyen puestos que piden título universitario, título profesional o licencia (ninguno de los dos tiene título universitario); un pago desde US$40/h pasa a revisar.",
   "comunes": {
     "dias_maximos": 10,
     "pais_si": [
@@ -118,7 +118,8 @@
       "take calls",
       "taking calls"
     ],
-    "max_busquedas": 28
+    "max_busquedas": 28,
+    "pago_experto_hora": 40
   },
   "perfiles": {
     "luz": {
@@ -319,7 +320,47 @@
         "netsuite",
         "revops",
         "media buyer",
-        "brand"
+        "brand",
+        "cardiac",
+        "cardiologist",
+        "radiologist",
+        "sonographer",
+        "echocardiograph",
+        "surgeon",
+        "anesthesiolog",
+        "oncologist",
+        "pathologist",
+        "dermatologist",
+        "psychiatrist",
+        "psychologist",
+        "dentist",
+        "dental hygienist",
+        "veterinarian",
+        "optometrist",
+        "audiologist",
+        "dietitian",
+        "nutritionist",
+        "phlebotomist",
+        "paramedic",
+        "clinician",
+        "medical doctor",
+        "scientist",
+        "phd",
+        "professor",
+        "lecturer",
+        "actuar",
+        "statistician",
+        "economist",
+        "mathemat",
+        "physicist",
+        "physics",
+        "chemist",
+        "biolog",
+        "epidemiolog",
+        "pharmacolog",
+        "toxicolog",
+        "counselor",
+        "legal counsel"
       ],
       "voz_no": [
         "phone support",
@@ -431,7 +472,8 @@
         "malay",
         "tagalog",
         "hindi"
-      ]
+      ],
+      "sin_titulo_universitario": true
     },
     "cristian": {
       "nombre": "Cristian",
@@ -647,7 +689,47 @@
         "revops",
         "media buyer",
         "brand",
-        "seo"
+        "seo",
+        "cardiac",
+        "cardiologist",
+        "radiologist",
+        "sonographer",
+        "echocardiograph",
+        "surgeon",
+        "anesthesiolog",
+        "oncologist",
+        "pathologist",
+        "dermatologist",
+        "psychiatrist",
+        "psychologist",
+        "dentist",
+        "dental hygienist",
+        "veterinarian",
+        "optometrist",
+        "audiologist",
+        "dietitian",
+        "nutritionist",
+        "phlebotomist",
+        "paramedic",
+        "clinician",
+        "medical doctor",
+        "scientist",
+        "phd",
+        "professor",
+        "lecturer",
+        "actuar",
+        "statistician",
+        "economist",
+        "mathemat",
+        "physicist",
+        "physics",
+        "chemist",
+        "biolog",
+        "epidemiolog",
+        "pharmacolog",
+        "toxicolog",
+        "counselor",
+        "legal counsel"
       ],
       "voz_no": [
         "phone support",
@@ -760,7 +842,8 @@
         "malay",
         "tagalog",
         "hindi"
-      ]
+      ],
+      "sin_titulo_universitario": true
     }
   }
 }

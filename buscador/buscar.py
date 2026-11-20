@@ -444,6 +444,111 @@ def regla(nombre, resultado, detalle):
 
 IDIOMA_REQ = r"(fluent|fluency|native|proficien\w*|bilingual)[^.\n]{0,40}\b{l}\b|\b{l}\b[^.\n]{0,25}(required|speaker|speaking|fluency|native|mandatory|is a must)"
 
+# ---------------------------------------------------------------- estudios y licencias
+# Títulos profesionales y licencias que ni Luz ni Cristian tienen (médico, enfermería,
+# abogado, contador público, doctorado, maestría...). Si el anuncio los pide, se excluye.
+CREDENCIAL = re.compile(
+    r"\bMD,? (?:or |/ ?)?DO\b|\bM\.D\.|\bMD degree|medical degree|medical school|medical licen[sc]e"
+    r"|board[- ]certifi\w*|licensed (?:physician|doctor|nurse|pharmacist|therapist|psychologist|counselor|clinician"
+    r"|attorney|lawyer|dentist|veterinarian|social worker|practitioner|radiolog\w*|sonographer|technologist)"
+    r"|(?:active|current|valid|unrestricted|state|professional|clinical|nursing|rn|lpn|medical) licen[sc]e\b"
+    r"|licen[sc]e to practi[cs]e|registered nurse|bar admission|admitted to (?:the bar|practice)"
+    r"|juris doctor|\bJ\.?D\.? degree|\bph\.? ?d\b|doctoral degree|doctorate|master['’]?s (?:degree|in)\b|\bMBA\b"
+    r"|medical residency|completed (?:a |your )?residency|certified public accountant"
+    r"|\bCPA (?:required|licen[sc]e|certifi\w*|designation)|\b(?:licensed|active|qualified) CPA\b"
+    r"|certified (?:professional |medical )?coder|\bCPC (?:certifi\w*|credential|required)|\bRHIT\b|\bRHIA\b",
+    re.I)
+# Título universitario (licenciatura, bachelor's, associate's...). El bachiller de secundaria no cuenta.
+TITULO_UNIV = re.compile(
+    r"\bbachelor['’]?s?\b|\b(?:BA/BS|BS/BA|B\.A\.|B\.S\.)|\b(?:undergraduate|university|college|4[- ]year|four[- ]year"
+    r"|academic|associate['’]?s|technical|relevant|related) degree\b|\bdegree (?:in|from)\b|\ba degree\b"
+    r"|t[ií]tulo universitario|licenciatura|licenciad[oa] en|grado universitario|carrera universitaria|egresad[oa]",
+    re.I)
+_NEGACION = re.compile(r"\b(?:no|not|without|don['’]?t need|do not need|doesn['’]?t require|does not require|sin)\b[^.\n]{0,25}$", re.I)
+_NO_HACE_FALTA = re.compile(r"^[^.\n;]{0,40}\b(?:not required|not necessary|not needed|optional|no es necesari)", re.I)
+_ALTERNATIVA_DESPUES = re.compile(r"^[^.\n;]{0,120}\b(?:or|o)\b[^.\n;]{0,40}\b(?:experience|background|track record|knowledge|skills"
+                                  r"|expertise|alternative|experiencia)\b"
+                                  r"|^[^.\n;]{0,60}\bor (?:an? )?equivalent\b(?! (?:\w+ )?(?:degree|qualification))"
+                                  r"|^[^.\n;]{0,120}\b(?:equivalent|comparable|relevant|practical|professional) (?:work |professional |practical )?experience"
+                                  r"|^[^.\n;]{0,120}\bin lieu of\b", re.I)
+_ALTERNATIVA_ANTES = re.compile(r"(?:\b(?:or|o)|in lieu of)\s+(?:a|an|un|una)?\s*(?:relevant\s+|related\s+)?$", re.I)
+_PREFERIDO = re.compile(r"preferred|preferably|a plus|is a plus|strong plus|nice[- ]to[- ]have|bonus|desirable|desired"
+                        r"|advantage|ideally|an asset|valued|beneficial|deseable|valorable|preferible", re.I)
+_OBLIGATORIO_ANTES = re.compile(r"\b(?:must|required|requires|require|requirements?|mandatory|minimum|essential|need to have"
+                                r"|you need|obligatori[oa]|indispensable|requisitos?|requerid[oa])\b", re.I)
+_OBLIGATORIO_DESPUES = re.compile(r"^[^.\n;]{0,60}\b(?:required|mandatory|is a must|is essential|obligatori[oa]|indispensable|requerid[oa])\b", re.I)
+# encabezados de sección del anuncio
+_SEC_PREF = re.compile(r"preferred|nice[- ]to[- ]have|bonus|\bplus\b|desirable|deseable|valorable|optional", re.I)
+_SEC_OTRO = re.compile(r"responsibilit|what you(?:'|’)?ll do|what you will do|duties|about (?:the |this )?(?:role|us|company|job|position|team)"
+                       r"|benefits|perks|what we offer|compensation|selection process|how to apply|why join|day[- ]to[- ]day"
+                       r"|your role|the role|\babout\b(?! you)|who we are|our mission|funciones|responsabilidades|beneficios"
+                       r"|ofrecemos|sobre nosotros|la empresa|payment", re.I)
+# «licensed therapists», «board-certified physicians», «registered nurses» a menudo describen
+# al equipo de la empresa; solo cuentan si se refieren al candidato
+_DEL_EQUIPO = re.compile(r"licensed|board|registered nurse", re.I)
+_CANDIDATO = re.compile(r"\b(?:you are|you're|are|be|must be|must hold|must have|hold|holds|have|has|having|possess\w*"
+                        r"|as an?|is|being|currently)\s+(?:an?\s+|currently\s+|also\s+)?$", re.I)
+_SEC_REQ = re.compile(r"requirement|qualification|what you(?:'|’)?ll bring|what you bring|must[- ]haves?|you have|who you are"
+                      r"|looking for|ideal candidate|about you|skills|education|requisitos|perfil|competencias", re.I)
+
+
+def _seccion(texto, pos):
+    """Mira el encabezado más cercano antes de pos: 'requisito', 'preferido', 'otro' o 'desconocido'."""
+    lineas = texto[:pos].split("\n")[:-1]
+    for linea in reversed(lineas[-60:]):
+        t = linea.strip()
+        if len(t) > 70:
+            if not t.endswith(":"):
+                continue
+            t = t[-45:]  # p. ej. «...9. Ad hoc tasks Qualifications:»
+        t = t.strip("#*•:").strip()
+        if not t or t.startswith("-"):
+            continue
+        if _SEC_PREF.search(t):
+            return "preferido"
+        if _SEC_OTRO.search(t):
+            return "otro"
+        if _SEC_REQ.search(t):
+            return "requisito"
+    return "desconocido"
+
+
+def _requisitos(texto, patron):
+    """Busca el patrón en el anuncio y decide si se lo piden al candidato.
+    Devuelve (obligatorios, dudosos), cada uno con fragmentos del anuncio.
+    No cuenta lo preferido, lo opcional, lo reemplazable por experiencia ni lo que
+    aparece fuera de los requisitos (p. ej. «apoyarás a médicos certificados»)."""
+    obligatorios, dudosos = [], []
+    for m in patron.finditer(texto):
+        if _DEL_EQUIPO.match(m.group(0)):
+            ini_l = max(texto.rfind("\n", 0, m.start()), texto.rfind(". ", 0, m.start()))
+            previo = re.sub(r"^[\s\-•*\d.)]*(?:[A-Za-z /&]{1,25}:)?\s*", "", texto[ini_l + 1:m.start()])
+            if previo.strip() and not _CANDIDATO.search(previo):
+                continue
+        ini = max(texto.rfind("\n", 0, m.start()), texto.rfind(". ", 0, m.start()), texto.rfind(";", 0, m.start()))
+        antes = texto[ini + 1:m.start()][-120:]
+        despues = texto[m.end():m.end() + 200]
+        corte = re.search(r"\n|\.\s|;", despues)
+        despues_corto = despues[:corte.start()] if corte else despues
+        if _NEGACION.search(antes) or _NO_HACE_FALTA.search(despues):
+            continue
+        if _ALTERNATIVA_DESPUES.search(despues_corto) or _ALTERNATIVA_ANTES.search(antes):
+            continue
+        if re.search(r"\b(?:or|o)\s*$", despues_corto) and corte and despues[corte.start()] == "\n":
+            continue  # «...degree or» y la siguiente viñeta da otra opción (p. ej. años de experiencia)
+        frag = re.sub(r"\s+", " ", antes[-50:] + m.group(0) + despues_corto[:80]).strip(" -•:")
+        if _OBLIGATORIO_DESPUES.search(despues_corto) or _OBLIGATORIO_ANTES.search(antes):
+            obligatorios.append(frag)
+            continue
+        if _PREFERIDO.search(despues_corto) or _PREFERIDO.search(antes):
+            continue
+        sec = _seccion(texto, m.start())
+        if sec == "requisito":
+            obligatorios.append(frag)
+        elif sec == "desconocido":
+            dudosos.append(frag)
+    return obligatorios, dudosos
+
 
 def evaluar(v, perfil, comunes):
     titulo = " " + norm(v["puesto"]) + " "
@@ -519,6 +624,35 @@ def evaluar(v, perfil, comunes):
         filtro.append(regla("Pago", "no se sabe", "Pago no publicado"))
         if minimo:
             dudas.append("pago no indicado")
+    tope = comunes.get("pago_experto_hora")
+    if tope and (pmin or pmax or 0) >= tope:
+        # un puesto de back office o soporte no paga eso: suele ser para médicos,
+        # abogados o expertos con título que entrenan IA
+        filtro.append(regla("Pago de experto", "no se sabe",
+                            "Desde US$%.0f/h: ese pago suele ser para profesionales con título; revisa los requisitos" % (pmin or pmax)))
+        dudas.append("pago de nivel experto (revisa si pide título)")
+
+    # estudios y licencias
+    texto_orig = v["descripcion_txt"]
+    cred_ob, cred_duda = _requisitos(texto_orig, CREDENCIAL)
+    if perfil.get("sin_titulo_universitario"):
+        univ_ob, univ_duda = _requisitos(texto_orig, TITULO_UNIV)
+    else:
+        univ_ob, univ_duda = [], []
+    if cred_ob:
+        filtro.append(regla("Estudios", "no cumple", "Pide título profesional o licencia: «%s»" % cred_ob[0][:140]))
+        duras.append("pide título profesional o licencia")
+    elif cred_duda:
+        filtro.append(regla("Estudios", "no se sabe", "Menciona un título profesional o licencia: «%s»" % cred_duda[0][:140]))
+        dudas.append("confirmar si pide título profesional o licencia")
+    elif univ_ob:
+        filtro.append(regla("Estudios", "no cumple", "Pide título universitario: «%s»" % univ_ob[0][:140]))
+        duras.append("pide título universitario")
+    elif univ_duda:
+        filtro.append(regla("Estudios", "no se sabe", "Menciona título universitario sin decir si es obligatorio: «%s»" % univ_duda[0][:140]))
+        dudas.append("confirmar si el título universitario es obligatorio")
+    elif perfil.get("sin_titulo_universitario"):
+        filtro.append(regla("Estudios", "cumple", "No pide título universitario ni licencias"))
 
     # idiomas
     malos = [l for l in perfil.get("idiomas_no", []) if re.search(IDIOMA_REQ.replace("{l}", re.escape(l)), texto)]
@@ -673,6 +807,19 @@ def main():
         ultima = a_fecha(v.get("vista_ultima_vez"))
         if ultima and (AHORA - ultima).days <= DIAS_HISTORIAL:
             v["ya_no_aparece"] = True
+            # se vuelven a evaluar con las reglas de hoy, por si cambiaron
+            # (solo para hacerlas más estrictas: el texto guardado está recortado y
+            # podría haber perdido lo que la excluyó)
+            base = dict(v, categoria="", descripcion_txt=v.get("descripcion") or "")
+            orden = {"cumple": 0, "revisar": 1, "excluida": 2}
+            for pid, viejo in list((v.get("perfiles") or {}).items()):
+                if pid in perfiles:
+                    try:
+                        nuevo = evaluar(base, perfiles[pid], comunes)
+                        if orden.get(nuevo["estado"], 0) > orden.get(viejo.get("estado"), 0):
+                            v["perfiles"][pid] = nuevo
+                    except Exception as e:  # noqa: BLE001
+                        print("No se pudo reevaluar", vid, e, file=sys.stderr)
             resultado[vid] = v
 
     lista = sorted(resultado.values(), key=lambda x: (min((e["prioridad"] for e in x["perfiles"].values()), default=9), -(x.get("pago_max_hora") or 0), x.get("publicada") or ""), reverse=False)
