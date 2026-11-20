@@ -326,6 +326,48 @@ def fuente_wwr():
     return out
 
 
+def fuente_sagan():
+    """Sagan Recruitment: agencia que contrata en LATAM y el Caribe para empresas de EE. UU.
+    Su web publica un RSS de WordPress con 10 vacantes por página; leemos las 3 más recientes."""
+    out = []
+    base = "https://saganrecruitment.com/feed/?post_type=job"
+    consultas = (("sagan-1.xml", base), ("sagan-2.xml", base + "&paged=2"), ("sagan-3.xml", base + "&paged=3"))
+    etiqueta = "{http://purl.org/rss/1.0/modules/content/}encoded"
+    for xml in varias(consultas, json_esperado=False):
+        raiz = ET.fromstring(xml)
+        for it in raiz.iter("item"):
+            cuerpo = it.findtext(etiqueta) or it.findtext("description") or ""
+            texto = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.unescape(cuerpo))).strip()
+            corte = r"(?=\s+(?:Compensation|Salary Range|Salary|Work Schedule|Recruiting region|NOTE|Contractor|Full-time|About|Position Overview)\b|$)"
+            m = (re.search(r"Recruiting region:\s*(.+?)" + corte, texto)
+                 or re.search(r"Location:\s*(.+?)" + corte, texto))
+            ubic = m.group(1).strip(" .") if m else ""
+            if not ubic or norm(ubic) in ("remote", "remoto"):
+                ubic = "LATAM (Sagan)"
+            m = re.search(r"(?:Compensation|Salary Range):\s*(.+?)" + corte, texto)
+            pago = m.group(1).strip() if m else ""
+            hasta = re.match(r"(?i)\s*up to\s+(?:usd|us\$|\$)?\s*([\d,.]+k?)", pago)
+            if hasta:
+                pago = "USD " + hasta.group(1) + " (up to)"
+            elif pago and not re.match(r"(?i)\s*(usd|us\$|\$)", pago):
+                pago = "USD " + pago
+            if pago and not re.search(r"(?i)hour|hr\b|month|/ ?mo|year|annual|week", pago):
+                pago += " per month"  # Sagan publica sueldos mensuales
+            out.append({
+                "fuente": "Sagan Recruitment",
+                "url": it.findtext("link"),
+                "puesto": (it.findtext("title") or "").strip(),
+                "empresa": "Sagan Recruitment (cliente en EE. UU.)",
+                "ubicacion": ubic,
+                "pago_texto": pago[:120],
+                "publicada": it.findtext("pubDate"),
+                "tipo": "contractor",
+                "categoria": "",
+                "descripcion": cuerpo,
+            })
+    return out
+
+
 def fuente_workingnomads():
     data = pedir("https://www.workingnomads.com/api/exposed_jobs/", "workingnomads.json")
     out = []
@@ -502,6 +544,7 @@ def main():
         "Remote OK": fuente_remoteok,
         "We Work Remotely": fuente_wwr,
         "Working Nomads": fuente_workingnomads,
+        "Sagan Recruitment": fuente_sagan,
     }
     crudas, informe = [], {}
     for nombre, fn in fuentes.items():

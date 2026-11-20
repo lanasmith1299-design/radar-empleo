@@ -118,7 +118,7 @@
       "take calls",
       "taking calls"
     ],
-    "max_busquedas": 26
+    "max_busquedas": 28
   },
   "perfiles": {
     "luz": {
@@ -126,6 +126,7 @@
       "pago_min_hora": 8,
       "dias_maximos": 10,
       "busquedas": [
+        "InsideOutVAS",
         "data entry",
         "back office",
         "medical records",
