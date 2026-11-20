@@ -91,7 +91,7 @@ Las reglas de la IA (para analizar vacantes y escribir) están en la app, en **A
 
 ## Qué hace y qué no hace
 
-- Revisa 6 fuentes con API pública y gratis: Remotive, Himalayas, Jobicy, Remote OK, We Work Remotely y Working Nomads. **No** revisa LinkedIn ni Indeed (no tienen API gratis). Esas se agregan a mano con **Agregar vacante**.
+- Revisa 7 fuentes públicas y gratis: Remotive, Himalayas, Jobicy, Remote OK, We Work Remotely, Working Nomads y el RSS de la agencia Sagan Recruitment (LATAM y el Caribe). Las vacantes de la agencia InsideOutVAS llegan por Himalayas. **No** revisa LinkedIn ni Indeed (no tienen API gratis). Esas se agregan a mano con **Agregar vacante**.
 - "Cumple tus filtros" significa que el texto del anuncio pasó las reglas, **no** que esté verificada. Antes de postular, abre el anuncio original y el formulario.
 - Nunca postula por ti ni paga nada. Tú decides y envías cada postulación.
 - Si el repositorio pasa 60 días sin cambios, GitHub pausa la búsqueda diaria. Como cada búsqueda guarda resultados, eso no debería pasar; si pasa, entra a **Actions** y pulsa **Enable workflow**.
@@ -105,4 +105,4 @@ Las reglas de la IA (para analizar vacantes y escribir) están en la app, en **A
 | "No se pudo conectar con Ollama" | Ollama debe estar abierto en esa PC, `OLLAMA_ORIGINS` debe tener tu dirección exacta de GitHub Pages y hay que reiniciar Ollama después de `setx`. |
 | Perdí mis datos del teléfono | Importa tu último respaldo. Borrar los datos del navegador borra los de la app. |
 
-Vacantes cortesía de [Remotive](https://remotive.com), [Himalayas](https://himalayas.app), [Jobicy](https://jobicy.com), [Remote OK](https://remoteok.com), [We Work Remotely](https://weworkremotely.com) y [Working Nomads](https://www.workingnomads.com). Cada vacante enlaza a su anuncio original.
+Vacantes cortesía de [Remotive](https://remotive.com), [Himalayas](https://himalayas.app), [Jobicy](https://jobicy.com), [Remote OK](https://remoteok.com), [We Work Remotely](https://weworkremotely.com), [Working Nomads](https://www.workingnomads.com) y [Sagan Recruitment](https://saganrecruitment.com). Cada vacante enlaza a su anuncio original.
