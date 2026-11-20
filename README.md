@@ -86,6 +86,8 @@ Edita `config/perfiles.json` en GitHub (botón del lápiz) o desde **Ajustes →
 - `busquedas`: palabras que se buscan en las bolsas de empleo.
 - `titulo_si` / `titulo_no`: palabras que el título debe tener o no tener.
 - `excluir_empresas`, `idiomas_no`, `dias`: empresas descartadas, idiomas que no se aceptan y antigüedad máxima.
+- `sin_titulo_universitario`: con `true`, se excluyen las vacantes que piden título universitario obligatorio (si es "preferido" o acepta experiencia equivalente, no se excluye; si no queda claro, va a revisar). Las que piden título profesional o licencia (médico, enfermería, abogado, CPA, doctorado, maestría) se excluyen siempre.
+- `pago_experto_hora` (en `comunes`): desde ese pago por hora la vacante va a revisar, porque suele ser para profesionales con título.
 
 Las reglas de la IA (para analizar vacantes y escribir) están en la app, en **Ajustes → Perfil y reglas**.
 
