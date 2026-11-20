@@ -30,6 +30,7 @@ jobs:
         env:
           NTFY_LUZ: ${{ secrets.NTFY_LUZ }}
           NTFY_CRISTIAN: ${{ secrets.NTFY_CRISTIAN }}
+          RADAR_SIN_AVISOS: "1"
         run: python buscador/buscar.py
 
       - name: Guardar resultados
