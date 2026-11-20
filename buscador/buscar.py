@@ -656,6 +656,9 @@ def evaluar(v, perfil, comunes):
 
     # idiomas
     malos = [l for l in perfil.get("idiomas_no", []) if re.search(IDIOMA_REQ.replace("{l}", re.escape(l)), texto)]
+    # «Kinyarwanda Language Specialist», «Tamil Linguist»: el idioma en el título ya basta
+    malos += [l for l in perfil.get("idiomas_no", []) + comunes.get("idiomas_no_titulo", [])
+              if l not in malos and re.search(r"\b" + re.escape(norm(l)) + r"\b", titulo)]
     if malos:
         filtro.append(regla("Idiomas", "no cumple", "Pide " + ", ".join(malos[:2])))
         duras.append("pide " + malos[0])
