@@ -118,7 +118,7 @@
       "take calls",
       "taking calls"
     ],
-    "max_busquedas": 40,
+    "max_busquedas": 33,
     "pago_experto_hora": 40,
     "idiomas_no_titulo": [
       "kinyarwanda",
@@ -206,7 +206,7 @@
       "pago_min_hora": 8,
       "dias_maximos": 10,
       "busquedas": [
-  "InsideOutVAS",
+  "InsideOutVAS", "data processing", "data verification", "data validation", "transaction processing", "operations associate", "records management", "banking operations",
   "data entry",
   "back office",
   "medical records",
@@ -227,7 +227,7 @@
   "search quality rater",
   "product listing",
   "document indexing",
-  "medical data entry", "data processing", "data verification", "data validation", "transaction processing", "operations associate", "records management", "banking operations"
+  "medical data entry"
 ],
       "titulo_si": [
         "data entry",
