@@ -132,6 +132,9 @@ textarea.code{font-family:var(--font-mono); font-size:13px; min-height:420px}
 .thumbs button{position:absolute; top:-6px; right:-6px; border-radius:999px; width:22px; height:22px; border:1px solid var(--line); background:var(--surface); cursor:pointer; font-size:12px; line-height:1}
 .note{border-left:3px solid var(--mark); background:var(--mark-soft); padding:9px 12px; border-radius:0 8px 8px 0; font-size:13.5px}
 .reason-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.batch-review{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.batch-review p{margin:4px 0 0}
+.batch-progress{font-size:13px;color:var(--muted)}
 .share-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
 .share-card{padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
 .share-card h3{font-size:15px;margin-bottom:4px}
@@ -176,7 +179,8 @@ const S={
   d:{}, busy:{}, out:{}, filtro:'pendiente', filtroPendiente:'alta', razonExclusion:'', q:'', selJob:null, selCv:null, cvPreview:true,
   post:{jobId:null, cvId:null}, paquetes:{}, rec:{jobId:null, tipo:'entrevista'}, gmail:{},
   ev:{turns:[], files:[]}, modal:null, add:{}, toast:null, data:null, dataError:null, copiar:null,
-  vault:{unlocked:false,password:null,syncing:false,pending:false,remoteExists:false,lastSync:'',error:'',otherTabs:0}
+  vault:{unlocked:false,password:null,syncing:false,pending:false,remoteExists:false,lastSync:'',error:'',otherTabs:0},
+  batch:{running:false,total:0,done:0,current:'',currentKey:'',cancelled:false,excluded:0,kept:0,result:''}
 };
 if(!TABS.some(t=>t[0]===S.tab)) S.tab='vacantes';
 if(!PERFILES.some(p=>p.id===S.pid)) S.pid='luz';
@@ -587,6 +591,8 @@ function vVacantes(){
   const J=filtrarJobs(); if(S.selJob&&!J.some(j=>j.id===S.selJob)) S.selJob=null; if(!S.selJob&&J.length&&window.innerWidth>980) S.selJob=J[0].id;
   const chips=[['verificada','Verificadas'],['pendiente','Pendientes'],['excluida','Excluidas'],['proceso','En proceso'],['todas','Todas ('+S.jobs.length+')']].map(x=>'<button type="button" class="chip" data-act="filtro" data-id="'+x[0]+'" aria-pressed="'+(S.filtro===x[0])+'">'+x[1]+'</button>').join('');
   const subPend=S.filtro==='pendiente'?'<div class="reason-row" aria-label="Subfiltros de revisión"><button class="chip" type="button" data-act="subFiltroPendiente" data-id="todas" aria-pressed="'+(S.filtroPendiente==='todas')+'">Todas ('+c.pendiente+')</button><button class="chip" type="button" data-act="subFiltroPendiente" data-id="alta" aria-pressed="'+(S.filtroPendiente==='alta')+'">Mejor encaje ('+S.jobs.filter(j=>j.estado==='pendiente'&&j.auto==='cumple'&&(j.prioridad||9)<=2).length+')</button><button class="chip" type="button" data-act="subFiltroPendiente" data-id="dudas" aria-pressed="'+(S.filtroPendiente==='dudas')+'">Datos por confirmar ('+S.jobs.filter(j=>j.estado==='pendiente'&&j.auto==='revisar').length+')</button></div>':'';
+  const loteJobs=S.jobs.filter(j=>j.estado==='pendiente'&&j.auto==='revisar'&&!EN_PROCESO.includes(j.etapa)&&String(j.descripcion||'').trim()).sort((a,b)=>(Number(b.descripcionCompleta===true)-Number(a.descripcionCompleta===true))||String(b.descripcion||'').length-String(a.descripcion||'').length);
+  const loteBox=S.filtro==='pendiente'?'<section class="card pad batch-review"><div><strong>Reducir pendientes con IA local</strong><p class="muted small">Ollama revisa hasta 10 “Datos por confirmar” por vez. Solo recomienda excluir si encuentra una cita literal que incumple una regla. No abre la fuente ni marca vacantes como verificadas.</p><div class="batch-progress" role="status">'+(S.batch.running?'Analizando '+S.batch.done+' de '+S.batch.total+(S.batch.current?' · '+esc(S.batch.current):''):S.batch.result?esc(S.batch.result):loteJobs.length+' vacantes con texto disponible')+'</div></div><div class="row"><button class="btn '+(S.batch.running?'':'primary')+'" type="button" data-act="'+(S.batch.running?'cancelarLote':'analizarLote')+'" '+(!S.batch.running&&(STORE.ia.modo!=='ollama'||!loteJobs.length)?'disabled':'')+'>'+(S.batch.running?'Detener análisis':STORE.ia.modo==='ollama'?'Analizar hasta '+Math.min(10,loteJobs.length)+' con Ollama':'Activa Ollama en Ajustes')+'</button></div></section>':'';
   const grupos=gruposExclusion(); const subEx=S.filtro==='excluida'?'<div class="reason-row" aria-label="Causa principal de exclusión"><button class="chip" type="button" data-act="razonExclusion" data-id="" aria-pressed="'+(!S.razonExclusion)+'">Todas ('+c.excluida+')</button>'+grupos.map(g=>'<button class="chip" type="button" data-act="razonExclusion" data-id="'+g.id+'" aria-pressed="'+(S.razonExclusion===g.id)+'">'+esc(g.label)+' ('+g.total+')</button>').join('')+'</div><p class="muted small" style="margin:4px 0 0">Cada vacante se cuenta una vez, por su causa principal.</p>':'';
   let list;
   if(!S.ready) list='<div class="empty">Cargando vacantes…</div>';
@@ -594,7 +600,7 @@ function vVacantes(){
   else list=J.map(j=>'<button type="button" class="item" data-act="selJob" data-id="'+esc(j.id)+'" aria-current="'+(j.id===S.selJob)+'"><span class="row between"><span class="pill '+pillClase(j)+'">'+esc(etiquetaEstado(j))+'</span><span class="tag">'+(j.carga?'CARGA '+esc(j.carga):'')+'</span></span><span class="t" style="margin-top:6px">'+esc(j.puesto||'(sin título)')+'</span><span class="s">'+esc(j.empresa||'')+(j.pago?' · '+esc(j.pago):'')+'</span><span class="s">'+esc([j.canal==='no-voz'?'No-voz':j.canal, j.prioridad?'Prioridad '+j.prioridad:'', EN_PROCESO.includes(j.etapa)||j.etapa==='rechazada'?ETAPA_LBL[j.etapa]:''].filter(Boolean).join(' · '))+'</span></button>').join('');
   const sj=job(S.selJob);
   return vVacantesCompartibles()+'<div class="tiles">'+tile('verificada','Verificadas y abiertas','n-ok')+tile('pendiente','Pendientes de verificar','n-warn')+tile('excluida','Excluidas por tus reglas','n-bad')+tile('proceso','Postuladas / en proceso','n-acc')+'</div>'+
-  '<div class="card pad"><div class="row between"><div class="chips" role="group" aria-label="Filtro">'+chips+'</div><div class="row" style="flex:1; justify-content:flex-end; min-width:260px"><input type="search" id="q" placeholder="Buscar por puesto, empresa o nota" value="'+esc(S.q)+'" data-input="q" style="max-width:320px"><button class="btn primary" type="button" data-act="abrirAgregar">Agregar vacante</button></div></div>'+subPend+subEx+'</div>'+
+  '<div class="card pad"><div class="row between"><div class="chips" role="group" aria-label="Filtro">'+chips+'</div><div class="row" style="flex:1; justify-content:flex-end; min-width:260px"><input type="search" id="q" placeholder="Buscar por puesto, empresa o nota" value="'+esc(S.q)+'" data-input="q" style="max-width:320px"><button class="btn primary" type="button" data-act="abrirAgregar">Agregar vacante</button></div></div>'+subPend+subEx+'</div>'+loteBox+
   '<div class="split"><div class="list" data-keep="jobs">'+list+'</div><div>'+(sj?vJob(sj):'<div class="empty">Elige una vacante para ver su ficha.</div>')+'</div></div>'+
   '<p class="muted small" style="margin:0">'+(S.data&&S.data.actualizado?'Búsqueda del '+esc(new Date(S.data.actualizado).toLocaleString("es-DO",{timeZone:"America/Santo_Domingo",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}))+'. ':'')+'Vacantes de <a href="https://remotive.com" target="_blank" rel="noopener">Remotive</a>, <a href="https://himalayas.app" target="_blank" rel="noopener">Himalayas</a>, <a href="https://jobicy.com" target="_blank" rel="noopener">Jobicy</a>, <a href="https://remoteok.com" target="_blank" rel="noopener">Remote OK</a>, <a href="https://weworkremotely.com" target="_blank" rel="noopener">We Work Remotely</a>, <a href="https://www.workingnomads.com" target="_blank" rel="noopener">Working Nomads</a> y la agencia <a href="https://saganrecruitment.com" target="_blank" rel="noopener">Sagan Recruitment</a>. Cada una enlaza a su fuente.</p>';
 }
@@ -794,6 +800,34 @@ const ACT={
   filtro(el){ S.filtro=el.dataset.id; S.selJob=null; if(S.filtro!=='excluida') S.razonExclusion=''; if(S.filtro!=='pendiente') S.filtroPendiente='alta'; render(); },
   razonExclusion(el){ S.razonExclusion=el.dataset.id||''; S.selJob=null; render(); },
   subFiltroPendiente(el){ S.filtroPendiente=el.dataset.id||'todas'; S.selJob=null; render(); },
+  cancelarLote(){ if(!S.batch.running) return; S.batch.cancelled=true; const b=S.busy[S.batch.currentKey]; if(b&&b.ctl) b.ctl.abort(); S.batch.result='Deteniendo la revisión…'; render(); },
+  async analizarLote(){
+    if(STORE.ia.modo!=='ollama'){ toast('En Ajustes, selecciona IA local con Ollama y prueba la conexión.','bad'); return; }
+    if(S.batch.running) return;
+    const pid=S.pid, candidatos=S.jobs.filter(j=>j.estado==='pendiente'&&j.auto==='revisar'&&!EN_PROCESO.includes(j.etapa)&&String(j.descripcion||'').trim()).sort((a,b)=>(Number(b.descripcionCompleta===true)-Number(a.descripcionCompleta===true))||String(b.descripcion||'').length-String(a.descripcion||'').length).slice(0,10);
+    if(!candidatos.length){ toast('No hay vacantes pendientes con texto disponible para analizar.'); return; }
+    Object.assign(S.batch,{running:true,total:candidatos.length,done:0,current:'',currentKey:'',cancelled:false,excluded:0,kept:0,result:''}); render();
+    let error=false;
+    for(let i=0;i<candidatos.length;i++){
+      if(S.batch.cancelled||S.pid!==pid) break;
+      const j=candidatos[i], key='lote:'+pid+':'+j.id; S.batch.current=j.puesto||j.empresa||'Vacante'; S.batch.currentKey=key; render();
+      const r=await preguntar(key,promptTriageLocal(j,pid),{json:true}); S.batch.currentKey='';
+      if(S.batch.cancelled||S.pid!==pid) break;
+      if(!r||typeof r!=='object'){ error=true; break; }
+      const cita=String(r.evidencia_literal||'').trim(), decision=String(r.decision||'').toLowerCase(), regla=String(r.regla||'Incumplimiento de regla').slice(0,120), motivo=String(r.motivo||'Incumplimiento detectado por IA local').slice(0,240);
+      if(decision==='excluir'&&evidenciaEnDescripcion(j.descripcion,cita)){
+        const filtros=(Array.isArray(j.filtro)?j.filtro.slice():[]).filter(f=>!(f&&f.regla==='Revisión IA local'));
+        filtros.push({regla:'Revisión IA local: '+regla,resultado:'no cumple',detalle:'Cita literal del anuncio: “'+cita.slice(0,240)+'”'});
+        await guardarJob(j.id,{estado:'excluida',motivoEstado:'Sugerencia de IA local: '+motivo+' — revisa la cita antes de descartar: “'+cita.slice(0,180)+'”',filtro:filtros,prioridad:4});
+        S.batch.excluded++;
+      }else S.batch.kept++;
+      S.batch.done=i+1; S.batch.current=''; render();
+    }
+    const stopped=S.batch.cancelled||S.pid!==pid, excluded=S.batch.excluded, kept=S.batch.kept;
+    S.batch.running=false; S.batch.current=''; S.batch.currentKey='';
+    S.batch.result=(stopped?'Revisión detenida':'Lote terminado')+': '+excluded+' sugeridas para excluir con cita exacta; '+kept+' siguen pendientes.'+(error?' La IA no pudo completar la siguiente vacante.':'');
+    render(); toast(S.batch.result,error?'bad':'');
+  },
   selJob(el){ S.selJob=el.dataset.id; render(); if(window.innerWidth<=980){ const a=$('article.card'); if(a) a.scrollIntoView({block:'start'}); } },
   async compartirVacante(el){
     const v=((S.data&&S.data.vacantes)||[]).find(x=>String(x.id||'')===String(el.dataset.id||'')); if(!v) return;
@@ -911,6 +945,15 @@ document.addEventListener('paste',e=>{ if(S.tab!=='evaluaciones') return; const 
 /* ---------- Prompts ---------- */
 function promptAnalisis(texto,url,fuente,li){
   return 'Analiza esta vacante para '+nombreP()+' según sus reglas. Hoy es '+hoy()+'.\n\n'+ctxPerfil()+'\n\nCV BASE (para medir encaje):\n'+cvPrincipal().slice(0,6000)+'\n\nVACANTE (enlace: '+(url||'no indicado')+'; dónde se encontró: '+(fuente||'no indicado')+'; postulantes en LinkedIn: '+(li||'no indicado')+'):\n'+String(texto).slice(0,18000)+'\n\n'+HORAS+'\n\nDevuelve SOLO un objeto JSON con estas claves (valores en español y breves; si un dato no aparece en el anuncio escribe "No indicado"; no inventes):\n{"puesto":"","empresa":"","elegibilidad":"si acepta candidatos en República Dominicana y en qué te basas","modalidad":"","canal":"no-voz | voz | mixto | desconocido","canalDetalle":"qué canales menciona","carga":"BAJA | MODERADA | ALTA | DESCONOCIDA","pago":"pago publicado tal cual, más el supuesto de conversión si lo hay","pagoHora":null,"contrato":"","horarioRD":"horario convertido a hora de RD","funciones":"","requisitos":"","brechas":"requisitos que la persona no cumple según su CV","encaje":"por qué encaja, citando experiencia real","publicada":"","fechaLimite":"","prioridad":3,"recomendacion":"pendiente | excluida","motivoEstado":"una línea","reglas":[{"regla":"nombre corto de la regla","resultado":"cumple | no cumple | no se sabe","detalle":"en qué te basas"}]}\n\nEn "reglas" revisa una por una sus reglas (máximo 8; incluye siempre canal, país, pago y tipo de puesto).\nCriterios: "excluida" si incumple una regla dura (incluye llamadas o voz; no acepta República Dominicana; pago claramente por debajo del mínimo; pide pagar algo; exige experiencia obligatoria que no tiene; empresa excluida en sus reglas; LinkedIn con 10 o más postulantes). En otro caso "pendiente". Nunca uses "verificada": eso lo marca la persona al abrir el formulario original. pagoHora: número solo si el pago publicado lo permite (anual ÷ 2080; mensual ÷ 173.3); si no, null. prioridad: 1 = encaja muy bien y cumple todo; 4 = encaje débil. carga: BAJA = tareas simples y repetitivas con poca presión; ALTA = metas agresivas, ritmo alto, muchas responsabilidades; DESCONOCIDA si el anuncio no da para saberlo.';
+}
+function promptTriageLocal(j,pid){
+  const p=STORE.perfiles[pid]||perfilVacio(pid), bases=Object.values(p.cvs||{}).filter(c=>c.tipo!=='ajustado'), cv=bases.find(c=>c.principal)||bases[0];
+  const pf=p.perfil||{}, descr=String(j.descripcion||'').slice(0,18000);
+  return 'Haz un filtro preliminar de esta vacante para decidir si merece revisión humana. Hoy es '+hoy()+'. Solo usa el texto y datos incluidos abajo; no abras ni supongas contenido del enlace.\n\nREGLAS DEL PERFIL:\n'+(pf.reglas||'(sin reglas)')+'\n'+lineaPago(pf)+'\nDATOS VERDADEROS FUERA DEL CV:\n'+(pf.hechos||'(ninguno)')+'\nCV BASE (resumen de experiencia):\n'+String(cv&&cv.contenido||'(sin CV cargado)').slice(0,4000)+'\n\nVACANTE: '+(j.puesto||'')+' — '+(j.empresa||'')+'\nUbicación publicada: '+(j.elegibilidad||'No indicada')+'\nFuente: '+(j.fuente||'')+'\nURL: '+(j.url||'')+'\nTexto completo confirmado por el buscador: '+(j.descripcionCompleta===true?'sí':'no')+'\nTEXTO DISPONIBLE:\n'+descr+'\n\nReglas de decisión: recomienda excluir únicamente si el texto aporta evidencia directa de que incumple una regla obligatoria del perfil (por ejemplo, llamadas, país no permitido, pago bajo el mínimo, título/licencia obligatorios sin equivalencia aplicable, o puesto claramente fuera de perfil). Si falta información, el anuncio puede estar incompleto, o una credencial admite experiencia equivalente relacionada, conserva la vacante pendiente. No marques nunca como verificada ni afirmes que abriste el formulario. Si recomiendas excluir, copia en evidencia_literal una frase de 20 o más caracteres exactamente como aparece en TEXTO DISPONIBLE, que demuestre el incumplimiento.\n\nDevuelve solo este JSON: {"decision":"excluir" o "mantener_pendiente","regla":"regla obligatoria que incumple o vacío","motivo":"explicación breve","evidencia_literal":"cita exacta del texto o vacío"}';
+}
+function evidenciaEnDescripcion(descripcion,cita){
+  const norm=s=>normalizarTextoUI(s).replace(/\s+/g,' ').trim();
+  const q=String(cita||'').trim(); return q.length>=20&&norm(descripcion).includes(norm(q));
 }
 function promptAnalisisDoble(texto,url,fuente,li,perfiles){
   const bloques=perfiles.map(d=>{ const p=d.profile||{}; const nm=(PERFILES.find(x=>x.id===d.id)||{}).nombre; return '=== PERFIL "'+d.id+'" ('+(p.nombre||nm)+') ===\nREGLAS:\n'+(p.reglas||'(sin reglas)')+'\n'+lineaPago(p)+'\nDATOS VERDADEROS FUERA DEL CV:\n'+(p.hechos||'(ninguno)')+'\nCV:\n'+String(d.cv||'(sin CV cargado)').slice(0,5000); }).join('\n\n');
