@@ -221,6 +221,8 @@ def fuente_himalayas(busquedas):
             continue
         jobs = data.get("jobs") if isinstance(data, dict) else data
         for j in jobs or []:
+            descripcion = j.get("description") or ""
+            extracto = j.get("excerpt") or ""
             url = j.get("applicationLink") or j.get("guid") or j.get("url")
             clave = j.get("guid") or url or (j.get("title"), j.get("companyName"))
             ubic = j.get("locationRestrictions") or []
@@ -243,7 +245,8 @@ def fuente_himalayas(busquedas):
                 "publicada": j.get("pubDate"),
                 "tipo": j.get("employmentType") or "",
                 "categoria": ", ".join(j.get("categories") or []) if isinstance(j.get("categories"), list) else str(j.get("categories") or ""),
-                "descripcion": j.get("description") or j.get("excerpt") or "",
+                "descripcion": descripcion or extracto,
+                "descripcion_completa": bool(descripcion),
             }
         time.sleep(0 if FIXTURES else 2)
     return list(vistos.values())
@@ -260,6 +263,8 @@ def fuente_jobicy():
             moneda = j.get("salaryCurrency") or ""
             periodo = j.get("salaryPeriod") or "annual"
             pmin, pmax = j.get("annualSalaryMin") or j.get("salaryMin"), j.get("annualSalaryMax") or j.get("salaryMax")
+            descripcion = j.get("jobDescription") or ""
+            extracto = j.get("jobExcerpt") or ""
             out.append({
                 "fuente": "Jobicy",
                 "url": j.get("url"),
@@ -272,7 +277,8 @@ def fuente_jobicy():
                 "publicada": j.get("pubDate"),
                 "tipo": ", ".join(j.get("jobType") or []) if isinstance(j.get("jobType"), list) else str(j.get("jobType") or ""),
                 "categoria": ", ".join(j.get("jobIndustry") or []) if isinstance(j.get("jobIndustry"), list) else str(j.get("jobIndustry") or ""),
-                "descripcion": j.get("jobDescription") or j.get("jobExcerpt") or "",
+                "descripcion": descripcion or extracto,
+                "descripcion_completa": bool(descripcion),
             })
     return out
 
@@ -634,6 +640,13 @@ def evaluar(v, perfil, comunes):
 
     # estudios y licencias
     texto_orig = v["descripcion_txt"]
+    completa = v.get("descripcion_completa")
+    if completa is None:
+        completa = v.get("fuente") not in ("Himalayas", "Jobicy") and len(texto_orig.split()) >= 80
+    if not completa or len(texto_orig.split()) < 80:
+        detalle = "La bolsa entregó un extracto, no la descripción completa" if not completa else "El texto recibido es demasiado corto para revisar requisitos"
+        filtro.append(regla("Anuncio completo", "no se sabe", detalle))
+        dudas.append("leer la descripción completa del anuncio original")
     cred_ob, cred_duda = _requisitos(texto_orig, CREDENCIAL)
     if perfil.get("sin_titulo_universitario"):
         univ_ob, univ_duda = _requisitos(texto_orig, TITULO_UNIV)
@@ -758,6 +771,8 @@ def main():
         if fecha and (AHORA - fecha).days > dias_max:
             continue
         v["descripcion_txt"] = limpiar_html(v.get("descripcion"))
+        if "descripcion_completa" not in v:
+            v["descripcion_completa"] = len(v["descripcion_txt"].split()) >= 80 and v.get("fuente") not in ("Himalayas", "Jobicy")
         v["pago_origen"] = "estructurado" if (v.get("pago_min_hora") or v.get("pago_max_hora")) else None
         if not v["pago_origen"]:
             v["pago_min_hora"], v["pago_max_hora"] = pago_desde_texto(v.get("pago_texto") or "")
@@ -796,6 +811,8 @@ def main():
             "vista_primera_vez": primera,
             "vista_ultima_vez": AHORA.isoformat(),
             "descripcion": v["descripcion_txt"][:5000],
+            "descripcion_completa": bool(v.get("descripcion_completa", len(v["descripcion_txt"].split()) >= 80 and v.get("fuente") not in ("Himalayas", "Jobicy"))),
+            "descripcion_truncada": len(v["descripcion_txt"]) > 5000,
             "perfiles": evals,
         }
         resultado[vid] = registro
