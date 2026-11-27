@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Descargar el repositorio
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Preparar Python
         uses: actions/setup-python@v5
@@ -41,5 +43,19 @@ jobs:
             echo "Sin cambios"
           else
             git commit -m "Vacantes $(date -u +%Y-%m-%d)"
-            git push
+            # La app puede actualizar una bóveda cifrada mientras corre esta búsqueda.
+            # Reaplica el commit de vacantes sobre el estado más reciente de main y reintenta.
+            for intento in 1 2 3; do
+              if ! git pull --rebase origin "$GITHUB_REF_NAME"; then
+                git rebase --abort || true
+                sleep $((intento * 2))
+                continue
+              fi
+              if git push origin "HEAD:$GITHUB_REF_NAME"; then
+                exit 0
+              fi
+              sleep $((intento * 2))
+            done
+            echo "No se pudo publicar después de 3 intentos" >&2
+            exit 1
           fi
