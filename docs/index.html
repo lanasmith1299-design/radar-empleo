@@ -166,7 +166,7 @@ function ls(k,v){try{ if(v===undefined) return localStorage.getItem('radar.'+k);
 const S={
   pid: ls('pid')||'luz', tab: (location.hash||'').slice(1)||ls('tab')||'vacantes',
   db:null, sample:null, downloads:null, mcp:null, user:null, limits:null,
-  ready:false, noRuntime:false, noDb:false, canWrite:true, sampleOff:false,
+  ready:false, noRuntime:false, noDb:false, canWrite:true, sampleOff:false, storagePersisted:null, storeMissing:false,
   profile:null, jobs:[], cvs:[], runs:[], loaded:{}, dbSlow:false, dbError:null,
   d:{}, busy:{}, out:{}, filtro:'pendiente', q:'', selJob:null, selCv:null, cvPreview:true,
   post:{jobId:null, cvId:null}, paquetes:{}, rec:{jobId:null, tipo:'entrevista'}, gmail:{},
@@ -284,6 +284,10 @@ function nombreArchivo(s){ return (String(s||'archivo').normalize('NFD').replace
 
 /* ---------- Datos guardados en este dispositivo ---------- */
 const LS_KEY='radar-libre.v1';
+function storeFalta(){ try{ const raw=localStorage.getItem(LS_KEY); if(!raw) return true; const v=JSON.parse(raw); return !v||typeof v!=='object'||!v.perfiles; }catch(e){ return true; } }
+S.storeMissing=storeFalta();
+async function pedirAlmacenamientoPersistente(){ try{ if(!navigator.storage||typeof navigator.storage.persist!=='function'){ S.storagePersisted=null; return; } S.storagePersisted=await navigator.storage.persisted(); if(!S.storagePersisted) S.storagePersisted=await navigator.storage.persist(); }catch(e){ S.storagePersisted=false; } if(S.tab==='perfil'&&S.ready) render(); }
+function mensajeAlmacenamiento(){ if(S.storagePersisted===true) return 'El navegador indicó que conservará los datos de este sitio aunque haya presión de espacio. Aun así, exporta respaldos: esto no los sincroniza con otros dispositivos.'; if(S.storagePersisted===false) return 'El navegador no confirmó el almacenamiento persistente. Exporta respaldos con frecuencia; esto no sincroniza los datos con otros dispositivos.'; return 'Comprobando si el navegador puede conservar los datos de este sitio…'; }
 const REGLAS_LUZ=`- Solo trabajos SIN llamadas ni voz (no-voz): data entry, back-office, operaciones, tickets, soporte por email. Prefiere email y tickets antes que chat en vivo.
 - 100% remoto y que acepte candidatos en República Dominicana. "LATAM" o "Worldwide" no garantiza RD: confirmar en el formulario o en la lista de países.
 - Pago mínimo: US$8 por hora o su equivalente en sueldo fijo mensual (unos US$1,390 al mes a tiempo completo). Lo ideal es US$15–30 por hora. Medio tiempo o tiempo completo.
@@ -310,7 +314,7 @@ const AMPLIO_REGLAS={luz:"- Ampliado (18 nov 2026): también cuenta cualquier pu
 function migrarReglas(st){ const id='reglas-backoffice-2026-11-18'; if(st.migraciones.includes(id)) return; Object.keys(AMPLIO_REGLAS).forEach(pid=>{ const pf=st.perfiles[pid]&&st.perfiles[pid].perfil; if(!pf) return; const r=String(pf.reglas||''); if(!r.includes('Ampliado (18 nov 2026')) pf.reglas=(r.trim()?r.trim()+'\n':'')+AMPLIO_REGLAS[pid]; }); st.migraciones.push(id); }
 function cargarStore(){ let s=null; try{ s=JSON.parse(localStorage.getItem(LS_KEY)||'null'); }catch(e){} return normalizarStore(s); }
 let STORE=cargarStore();
-function guardarStore(){ try{ localStorage.setItem(LS_KEY,JSON.stringify(STORE)); return true; }catch(e){ toast('No se pudo guardar en este dispositivo (memoria llena o navegación privada). Exporta un respaldo en Ajustes.','bad'); return false; } }
+function guardarStore(){ try{ localStorage.setItem(LS_KEY,JSON.stringify(STORE)); S.storeMissing=false; return true; }catch(e){ toast('No se pudo guardar en este dispositivo (memoria llena o navegación privada). Exporta un respaldo en Ajustes.','bad'); return false; } }
 function PS(pid){ return STORE.perfiles[pid||S.pid]; }
 function base(){ return S.pid; }
 function canalDe(e){ const f=(e.filtro||[]).find(x=>x.regla==='Sin llamadas'); if(!f) return 'desconocido'; return f.resultado==='cumple'?'no-voz':f.resultado==='no cumple'?'voz':'desconocido'; }
@@ -429,8 +433,9 @@ function vShell(){
 }
 function vBanner(){
   if(!S.ready) return '<div class="banner">Cargando…</div>';
-  if(S.dataError) return '<div class="banner">Todavía no hay resultados del buscador diario. Cuando corra la primera búsqueda aparecerán aquí. Mientras, puedes agregar vacantes a mano.</div>';
-  return '';
+  const vacio=S.storeMissing?'<div class="banner">No encontramos datos guardados en este navegador. Si ya habías creado CVs o seguimiento, quizá estaban en otro perfil/dispositivo o se borraron los datos del sitio. Si tienes un respaldo, impórtalo desde Ajustes.</div>':'';
+  if(S.dataError) return vacio+'<div class="banner">Todavía no hay resultados del buscador diario. Cuando corra la primera búsqueda aparecerán aquí. Mientras, puedes agregar vacantes a mano.</div>';
+  return vacio;
 }
 function vVista(){
   switch(S.tab){ case 'postular': return vPostular(); case 'cvs': return vCvs(); case 'evaluaciones': return vEval(); case 'reclutamiento': return vRec(); case 'perfil': return vPerfil(); default: return vVacantes(); }
@@ -643,7 +648,7 @@ function vPerfil(){
     '<ol class="small" style="margin:0; padding-left:18px"><li>Instala Ollama desde ollama.com y en PowerShell escribe <code>ollama pull '+esc(ia.modelo||'qwen3.5')+'</code>.</li><li>Permite esta página: en PowerShell escribe <code>setx OLLAMA_ORIGINS "'+esc(origen)+'"</code>. Después cierra Ollama (icono junto al reloj → Quit) y ábrelo otra vez.</li><li>Usa esta app en Chrome o Edge en esa misma PC. Si el navegador pregunta si permites el acceso a dispositivos de tu red local, acepta.</li></ol></div>':'')+
   (ia.modo==='gemini'?'<div class="card pad stack" style="box-shadow:none; background:var(--surface-2)"><div class="grid2"><label class="f" for="ia-key">Clave de Gemini<input type="password" id="ia-key" data-bind="ia:geminiKey" value="'+esc(dv('ia:geminiKey',ia.geminiKey))+'" autocomplete="off"></label><label class="f" for="ia-gm">Modelo<input type="text" id="ia-gm" data-bind="ia:geminiModelo" value="'+esc(dv('ia:geminiModelo',ia.geminiModelo))+'"></label></div><div class="row"><button class="btn" type="button" data-act="guardarIA">Guardar</button></div><p class="muted small" style="margin:0">La clave se consigue gratis en aistudio.google.com y se guarda solo en este dispositivo. No se incluye en los respaldos.</p></div>':'')+
   '</section>'+
-  '<section class="card pad stack"><h2 style="font-size:20px">Respaldo</h2><p class="muted small" style="margin:0">Tus CVs, notas y seguimiento se guardan solo en este dispositivo y navegador. Exporta un respaldo de vez en cuando e impórtalo en el otro dispositivo para tener lo mismo en el teléfono y en la PC.</p><div class="row"><button class="btn" type="button" data-act="exportar">Exportar respaldo</button><label class="btn" for="imp-file">Importar respaldo<input type="file" id="imp-file" accept="application/json,.json" data-change="importar" hidden></label></div></section>'+
+  '<section class="card pad stack"><h2 style="font-size:20px">Respaldo</h2><p class="muted small" style="margin:0">Tus CVs, notas y seguimiento se guardan solo en este dispositivo y navegador. Exporta un respaldo después de importar o editar un CV y cuando actualices tu seguimiento; guárdalo en una carpeta privada.</p><p class="muted small" style="margin:0">'+mensajeAlmacenamiento()+'</p><div class="row"><button class="btn" type="button" data-act="exportar">Exportar respaldo</button><label class="btn" for="imp-file">Importar respaldo<input type="file" id="imp-file" accept="application/json,.json" data-change="importar" hidden></label></div></section>'+
   '<section class="card pad stack"><h2 style="font-size:20px">Buscador diario</h2><p style="margin:0">'+(S.data&&S.data.actualizado?'Última búsqueda: '+esc(new Date(S.data.actualizado).toLocaleString('es-DO',{timeZone:'America/Santo_Domingo',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'})):'Todavía no ha corrido.')+'</p>'+fuentes+
   (gh?'<div class="row"><a class="btn" href="'+esc(gh.base)+'/actions/workflows/buscar.yml" target="_blank" rel="noopener">Buscar ahora (en GitHub) ↗</a><a class="btn" href="'+esc(gh.base)+'/edit/main/config/perfiles.json" target="_blank" rel="noopener">Editar reglas del buscador ↗</a></div><p class="muted small" style="margin:0">Para buscar ahora: en GitHub pulsa "Run workflow". Tarda unos minutos.</p>':'')+
   '</section></div></div>';
@@ -818,6 +823,7 @@ window.addEventListener('resize',()=>{ clearTimeout(window.__rz); window.__rz=se
 
 /* ---------- Arranque ---------- */
 async function iniciar(){
+  pedirAlmacenamientoPersistente();
   construir(); render();
   try{ const r=await fetch('data/vacantes.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); S.data=await r.json(); }
   catch(e){ S.dataError=String(e.message||e); }
