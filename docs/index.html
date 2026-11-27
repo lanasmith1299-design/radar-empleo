@@ -131,6 +131,11 @@ textarea.code{font-family:var(--font-mono); font-size:13px; min-height:420px}
 .thumbs img{width:96px; height:72px; object-fit:cover; border-radius:6px; border:1px solid var(--line); display:block}
 .thumbs button{position:absolute; top:-6px; right:-6px; border-radius:999px; width:22px; height:22px; border:1px solid var(--line); background:var(--surface); cursor:pointer; font-size:12px; line-height:1}
 .note{border-left:3px solid var(--mark); background:var(--mark-soft); padding:9px 12px; border-radius:0 8px 8px 0; font-size:13.5px}
+.reason-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.share-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.share-card{padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.share-card h3{font-size:15px;margin-bottom:4px}
+.share-card .share-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .grid2{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px}
 details summary{cursor:pointer; font-weight:700}
 .modal-back{position:fixed; inset:0; background:rgba(10,16,15,.45); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; z-index:20; overflow:auto}
@@ -168,12 +173,14 @@ const S={
   db:null, sample:null, downloads:null, mcp:null, user:null, limits:null,
   ready:false, noRuntime:false, noDb:false, canWrite:true, sampleOff:false, storagePersisted:null, storeMissing:false,
   profile:null, jobs:[], cvs:[], runs:[], loaded:{}, dbSlow:false, dbError:null,
-  d:{}, busy:{}, out:{}, filtro:'pendiente', q:'', selJob:null, selCv:null, cvPreview:true,
+  d:{}, busy:{}, out:{}, filtro:'pendiente', filtroPendiente:'alta', razonExclusion:'', q:'', selJob:null, selCv:null, cvPreview:true,
   post:{jobId:null, cvId:null}, paquetes:{}, rec:{jobId:null, tipo:'entrevista'}, gmail:{},
-  ev:{turns:[], files:[]}, modal:null, add:{}, toast:null, data:null, dataError:null, copiar:null
+  ev:{turns:[], files:[]}, modal:null, add:{}, toast:null, data:null, dataError:null, copiar:null,
+  vault:{unlocked:false,password:null,syncing:false,pending:false,remoteExists:false,lastSync:'',error:'',otherTabs:0}
 };
 if(!TABS.some(t=>t[0]===S.tab)) S.tab='vacantes';
 if(!PERFILES.some(p=>p.id===S.pid)) S.pid='luz';
+try{ S.vault.lastSync=localStorage.getItem('radar-vault-last-sync')||''; }catch(e){}
 
 /* ---------- Utilidades ---------- */
 const $=(s,r=document)=>r.querySelector(s);
@@ -288,6 +295,7 @@ function storeFalta(){ try{ const raw=localStorage.getItem(LS_KEY); if(!raw) ret
 S.storeMissing=storeFalta();
 async function pedirAlmacenamientoPersistente(){ try{ if(!navigator.storage||typeof navigator.storage.persist!=='function'){ S.storagePersisted=null; return; } S.storagePersisted=await navigator.storage.persisted(); if(!S.storagePersisted) S.storagePersisted=await navigator.storage.persist(); }catch(e){ S.storagePersisted=false; } if(S.tab==='perfil'&&S.ready) render(); }
 function mensajeAlmacenamiento(){ if(S.storagePersisted===true) return 'El navegador indicó que conservará los datos de este sitio aunque haya presión de espacio. Aun así, exporta respaldos: esto no los sincroniza con otros dispositivos.'; if(S.storagePersisted===false) return 'El navegador no confirmó el almacenamiento persistente. Exporta respaldos con frecuencia; esto no sincroniza los datos con otros dispositivos.'; return 'Comprobando si el navegador puede conservar los datos de este sitio…'; }
+function tokenBovedaGuardado(){ try{ return !!localStorage.getItem(VAULT_TOKEN_KEY); }catch(e){ return false; } }
 const REGLAS_LUZ=`- Solo trabajos SIN llamadas ni voz (no-voz): data entry, back-office, operaciones, tickets, soporte por email. Prefiere email y tickets antes que chat en vivo.
 - 100% remoto y que acepte candidatos en República Dominicana. "LATAM" o "Worldwide" no garantiza RD: confirmar en el formulario o en la lista de países.
 - Pago mínimo: US$8 por hora o su equivalente en sueldo fijo mensual (unos US$1,390 al mes a tiempo completo). Lo ideal es US$15–30 por hora. Medio tiempo o tiempo completo.
@@ -308,13 +316,24 @@ const REGLAS_CRISTIAN=`- SOLO puestos de agente o especialista de soporte al cli
 - Prioriza gaming, streaming y entretenimiento digital, SaaS y e-commerce; Zendesk; clientes de EE. UU. con trabajo desde LATAM; pago publicado en USD; "urgent" o "immediate start".
 - Ampliado (18 nov 2026, pedido por Luz): además del soporte por chat y email, también cuenta cualquier puesto back office o no-voz de cualquier industria para el que su experiencia califique: data entry, operaciones de e-commerce (pedidos, devoluciones, reembolsos, catálogo), moderación de contenido y trust & safety, verificación, documentos, anotación y evaluación de IA. Esto reemplaza la exclusión anterior de moderación de contenido y data entry. Para estos puestos no hace falta que el anuncio nombre chat o email, pero siguen excluidas las llamadas. Excluir títulos con "retrieval", "record collection" o "intake".`;
 function perfilVacio(pid){ return {perfil:pid==='luz'?{nombre:'Luz Castro',titular:'Back-office, data entry, tickets y soporte por email — 100% no-voz, remoto desde RD',pagoMin:8,pagoMax:30,reglas:REGLAS_LUZ,hechos:''}:{nombre:'Cristian De La Cruz',titular:'Agente de soporte por chat, email y tickets (no-voz), remoto desde RD',pagoMin:null,pagoMax:null,reglas:REGLAS_CRISTIAN,hechos:''},cvs:{},seguimiento:{},manuales:{},paquetes:{}}; }
-function storeVacio(){ return {version:1,ia:{modo:'copiar',ollamaUrl:'http://localhost:11434',modelo:'qwen3.5',geminiKey:'',geminiModelo:'gemini-flash-latest'},perfiles:{luz:perfilVacio('luz'),cristian:perfilVacio('cristian')}}; }
-function normalizarStore(s){ const b=storeVacio(); if(!s||typeof s!=='object') return b; const out={version:1,ia:Object.assign(b.ia,s.ia||{}),perfiles:{}}; PERFILES.forEach(p=>{ const v=perfilVacio(p.id); const x=(s.perfiles||{})[p.id]||{}; out.perfiles[p.id]={perfil:Object.assign(v.perfil,x.perfil||{}),cvs:x.cvs||{},seguimiento:x.seguimiento||{},manuales:x.manuales||{},paquetes:x.paquetes||{}}; }); out.migraciones=Array.isArray(s.migraciones)?s.migraciones.slice():[]; migrarReglas(out); return out; }
+function syncVacio(){ const perfiles={}; PERFILES.forEach(p=>perfiles[p.id]={perfil:0,borrados:{cvs:{},manuales:{}}}); return {ia:0,perfiles}; }
+function storeVacio(){ return {version:1,ia:{modo:'copiar',ollamaUrl:'http://localhost:11434',modelo:'qwen3.5',geminiKey:'',geminiModelo:'gemini-flash-latest'},sync:syncVacio(),perfiles:{luz:perfilVacio('luz'),cristian:perfilVacio('cristian')}}; }
+function normalizarStore(s){
+  const b=storeVacio(); if(!s||typeof s!=='object') return b;
+  const meta=(s.sync&&s.sync.perfiles)||{}, out={version:1,ia:Object.assign({},b.ia,s.ia||{}),sync:syncVacio(),perfiles:{}};
+  out.sync.ia=(s.sync&&s.sync.ia)||0;
+  PERFILES.forEach(p=>{
+    const v=perfilVacio(p.id), x=(s.perfiles||{})[p.id]||{}, sm=meta[p.id]||{}, bor=(sm.borrados||{});
+    out.sync.perfiles[p.id]={perfil:sm.perfil||0,borrados:{cvs:Object.assign({},bor.cvs||{}),manuales:Object.assign({},bor.manuales||{})}};
+    out.perfiles[p.id]={perfil:Object.assign({},v.perfil,x.perfil||{}),cvs:x.cvs||{},seguimiento:x.seguimiento||{},manuales:x.manuales||{},paquetes:x.paquetes||{}};
+  });
+  out.migraciones=Array.isArray(s.migraciones)?s.migraciones.slice():[]; migrarReglas(out); return out;
+}
 const AMPLIO_REGLAS={luz:"- Ampliado (18 nov 2026): también cuenta cualquier puesto back office o no-voz de cualquier industria para el que su experiencia califique: data entry, documentos y expedientes médicos (indexing, processing), pagos y facturación, pedidos, reclamos, verificación y KYC, fraude y disputas, moderación de contenido, anotación y evaluación de IA, transcripción y traducción español-inglés, y soporte por email o tickets. Excluir títulos con \"retrieval\", \"record collection\" o \"intake\" (suelen tener llamadas) y anuncios que digan \"Phones Required\".",cristian:"- Ampliado (18 nov 2026, pedido por Luz): además del soporte por chat y email, también cuenta cualquier puesto back office o no-voz de cualquier industria para el que su experiencia califique: data entry, operaciones de e-commerce (pedidos, devoluciones, reembolsos, catálogo), moderación de contenido y trust & safety, verificación, documentos, anotación y evaluación de IA. Esto reemplaza la exclusión anterior de moderación de contenido y data entry. Para estos puestos no hace falta que el anuncio nombre chat o email, pero siguen excluidas las llamadas. Excluir títulos con \"retrieval\", \"record collection\" o \"intake\"."};
 function migrarReglas(st){ const id='reglas-backoffice-2026-11-18'; if(st.migraciones.includes(id)) return; Object.keys(AMPLIO_REGLAS).forEach(pid=>{ const pf=st.perfiles[pid]&&st.perfiles[pid].perfil; if(!pf) return; const r=String(pf.reglas||''); if(!r.includes('Ampliado (18 nov 2026')) pf.reglas=(r.trim()?r.trim()+'\n':'')+AMPLIO_REGLAS[pid]; }); st.migraciones.push(id); }
 function cargarStore(){ let s=null; try{ s=JSON.parse(localStorage.getItem(LS_KEY)||'null'); }catch(e){} return normalizarStore(s); }
 let STORE=cargarStore();
-function guardarStore(){ try{ localStorage.setItem(LS_KEY,JSON.stringify(STORE)); S.storeMissing=false; return true; }catch(e){ toast('No se pudo guardar en este dispositivo (memoria llena o navegación privada). Exporta un respaldo en Ajustes.','bad'); return false; } }
+function guardarStore(sinSync){ try{ localStorage.setItem(LS_KEY,JSON.stringify(STORE)); S.storeMissing=false; vaultLocalRev++; if(!sinSync&&S.vault&&S.vault.unlocked) programarSyncVault(); return true; }catch(e){ toast('No se pudo guardar en este dispositivo (memoria llena o navegación privada). Exporta un respaldo en Ajustes.','bad'); return false; } }
 function PS(pid){ return STORE.perfiles[pid||S.pid]; }
 function base(){ return S.pid; }
 function canalDe(e){ const f=(e.filtro||[]).find(x=>x.regla==='Sin llamadas'); if(!f) return 'desconocido'; return f.resultado==='cumple'?'no-voz':f.resultado==='no cumple'?'voz':'desconocido'; }
@@ -322,21 +341,21 @@ function construir(){
   const P=PS(); const seg=P.seguimiento; const out=[];
   ((S.data&&S.data.vacantes)||[]).forEach(v=>{ const e=v.perfiles&&v.perfiles[S.pid]; if(!e) return; const s=seg[v.id]||{}; if(s.oculta) return;
     const pago=v.pago_texto||(v.pago_max_hora?('Unos US$'+(v.pago_min_hora||v.pago_max_hora)+'–'+v.pago_max_hora+' por hora'):'No indicado');
-    out.push(Object.assign({id:v.id,puesto:v.puesto,empresa:v.empresa,url:v.url,fuente:v.fuente,elegibilidad:v.ubicacion?('Ubicación publicada: '+v.ubicacion):'Sin restricción publicada',modalidad:'Remoto',canal:canalDe(e),canalDetalle:'',carga:'',pago,pagoHora:v.pago_max_hora,contrato:v.tipo||'',horarioRD:'',funciones:'',requisitos:'',brechas:'',encaje:'',linkedin:'No aplica',publicada:v.publicada?fmtFecha(v.publicada):'',fechaLimite:'',verificacion:'Encontrada por el buscador diario ('+v.fuente+') el '+fmtFecha(v.vista_primera_vez)+'. Falta abrir el anuncio original.',descripcion:v.descripcion,filtro:e.filtro,prioridad:e.prioridad,estado:e.estado==='excluida'?'excluida':'pendiente',motivoEstado:e.motivo,etapa:'por_revisar',origen:'buscador diario',auto:e.estado,yaNo:!!v.ya_no_aparece,actualizada:v.vista_ultima_vez},s));
+    out.push(Object.assign({id:v.id,puesto:v.puesto,empresa:v.empresa,url:v.url,fuente:v.fuente,elegibilidad:v.ubicacion?('Ubicación publicada: '+v.ubicacion):'Sin restricción publicada',modalidad:'Remoto',canal:canalDe(e),canalDetalle:'',carga:'',pago,pagoHora:v.pago_max_hora,contrato:v.tipo||'',horarioRD:'',funciones:'',requisitos:'',brechas:'',encaje:'',linkedin:'No aplica',publicada:v.publicada?fmtFecha(v.publicada):'',fechaLimite:'',verificacion:'Encontrada por el buscador diario ('+v.fuente+') el '+fmtFecha(v.vista_primera_vez)+'. Falta abrir el anuncio original.',descripcion:v.descripcion,descripcionCompleta:v.descripcion_completa===true,descripcionTruncada:!!v.descripcion_truncada,filtro:e.filtro,prioridad:e.prioridad,estado:e.estado==='excluida'?'excluida':'pendiente',motivoEstado:e.motivo,etapa:'por_revisar',origen:'buscador diario',auto:e.estado,yaNo:!!v.ya_no_aparece,actualizada:v.vista_ultima_vez},s));
   });
   Object.values(P.manuales).forEach(j=>{ const s=seg[j.id]||{}; if(!s.oculta) out.push(Object.assign({},j,s)); });
   S.jobs=out; S.cvs=Object.values(P.cvs); S.profile=P.perfil; S.paquetes=P.paquetes; S.loaded={profile:true,jobs:S.ready,cvs:true};
 }
 function cambiado(){ guardarStore(); construir(); render(); }
 function guardarJob(id,patch){ const P=PS(); patch=Object.assign({},patch,{actualizada:nowISO()}); if(P.manuales[id]) Object.assign(P.manuales[id],patch); else P.seguimiento[id]=Object.assign(P.seguimiento[id]||{},patch); cambiado(); return Promise.resolve(); }
-function borrarJobLocal(id){ const P=PS(); if(P.manuales[id]) delete P.manuales[id]; else P.seguimiento[id]=Object.assign(P.seguimiento[id]||{},{oculta:true}); cambiado(); return Promise.resolve(); }
+function borrarJobLocal(id){ const P=PS(); if(P.manuales[id]){ delete P.manuales[id]; STORE.sync.perfiles[S.pid].borrados.manuales[id]=Date.now(); } else P.seguimiento[id]=Object.assign(P.seguimiento[id]||{},{oculta:true,actualizada:nowISO()}); cambiado(); return Promise.resolve(); }
 function idLibre(pid,data){ let id=slug((data.empresa||'')+' '+(data.puesto||'')); const P=PS(pid); const usado=x=>!!P.manuales[x]||((S.data&&S.data.vacantes)||[]).some(v=>v.id===x); if(usado(id)) id=id+'-'+Date.now().toString(36).slice(-4); return id; }
 function nuevoJobEn(pid,data){ const id=idLibre(pid,data); PS(pid).manuales[id]=Object.assign({id,etapa:'por_revisar',prioridad:3,creada:nowISO(),actualizada:nowISO(),origen:'agregada a mano'},data); cambiado(); return Promise.resolve(id); }
 function nuevoJob(data){ return nuevoJobEn(S.pid,data); }
 async function datosPerfil(pid){ const P=PS(pid); const bases=Object.values(P.cvs).filter(c=>c.tipo!=='ajustado'); const c=bases.find(c=>c.principal)||bases[0]; return {id:pid,profile:P.perfil,cv:c?c.contenido||'':''}; }
 function guardarCv(id,patch){ const c=PS().cvs[id]; if(c) Object.assign(c,patch,{actualizado:nowISO()}); cambiado(); return Promise.resolve(); }
 function nuevoCv(data){ const id=slug(data.nombre)+'-'+Date.now().toString(36).slice(-5); PS().cvs[id]=Object.assign({id,creado:nowISO(),actualizado:nowISO()},data); cambiado(); return Promise.resolve(id); }
-function borrarCvLocal(id){ delete PS().cvs[id]; cambiado(); return Promise.resolve(); }
+function borrarCvLocal(id){ delete PS().cvs[id]; STORE.sync.perfiles[S.pid].borrados.cvs[id]=Date.now(); cambiado(); return Promise.resolve(); }
 function paquete(jobId){ const P=PS(); P.paquetes[jobId]=P.paquetes[jobId]||{}; return Promise.resolve(P.paquetes[jobId]); }
 function guardarPaquete(jobId,patch){ const P=PS(); P.paquetes[jobId]=Object.assign(P.paquetes[jobId]||{},patch,{actualizado:nowISO()}); cambiado(); return Promise.resolve(); }
 function suscribir(){ construir(); }
@@ -345,11 +364,75 @@ function importarRespaldo(texto){
   let d; try{ d=JSON.parse(texto); }catch(e){ toast('Ese archivo no es un respaldo válido.','bad'); return; }
   const n=normalizarStore(d); let total=0;
   PERFILES.forEach(p=>{ const de=n.perfiles[p.id], a=PS(p.id); if(!(d.perfiles||{})[p.id]) return;
-    if((d.perfiles[p.id]||{}).perfil) a.perfil=Object.assign(a.perfil,de.perfil);
-    ['cvs','seguimiento','manuales','paquetes'].forEach(k=>{ Object.keys(de[k]).forEach(id=>{ a[k][id]=Object.assign(a[k][id]||{},de[k][id]); total++; }); }); });
-  if(d.ia){ ['modo','ollamaUrl','modelo','geminiModelo'].forEach(k=>{ if(d.ia[k]) STORE.ia[k]=d.ia[k]; }); }
+    if((d.perfiles[p.id]||{}).perfil){ a.perfil=Object.assign(a.perfil,de.perfil); STORE.sync.perfiles[p.id].perfil=Date.now(); }
+    ['cvs','seguimiento','manuales','paquetes'].forEach(k=>{ Object.keys(de[k]).forEach(id=>{ a[k][id]=Object.assign(a[k][id]||{},de[k][id],{actualizado:nowISO()}); total++; }); }); });
+  if(d.ia){ ['modo','ollamaUrl','modelo','geminiModelo'].forEach(k=>{ if(d.ia[k]) STORE.ia[k]=d.ia[k]; }); STORE.sync.ia=Date.now(); }
   cambiado(); toast('Respaldo importado ('+total+' elementos).');
 }
+
+/* ---------- Bóveda cifrada sincronizada por GitHub ---------- */
+const VAULT_TOKEN_KEY='radar-vault-token.v1', VAULT_FILE='docs/data/boveda.json', VAULT_BRANCH='main', VAULT_ITERATIONS=600000;
+let vaultTimer=null, vaultBusy=false, vaultLocalRev=0;
+const VAULT_TAB_ID=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2), vaultPeers=new Map();
+let vaultChannel=null;
+try{ if('BroadcastChannel' in window){ vaultChannel=new BroadcastChannel('radar-empleo-vault'); vaultChannel.onmessage=e=>{ const m=e.data||{}; if(!m.id||m.id===VAULT_TAB_ID) return; if(m.type==='ping'){ vaultPeers.set(m.id,Date.now()); vaultChannel.postMessage({type:'pong',id:VAULT_TAB_ID}); } else if(m.type==='pong') vaultPeers.set(m.id,Date.now()); }; setInterval(()=>{ const now=Date.now(); vaultPeers.forEach((t,id)=>{ if(now-t>40000) vaultPeers.delete(id); }); S.vault.otherTabs=vaultPeers.size; vaultChannel.postMessage({type:'ping',id:VAULT_TAB_ID}); if(S.tab==='perfil'&&S.ready&&!(document.activeElement&&/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName))) render(); },15000); setTimeout(()=>vaultChannel.postMessage({type:'ping',id:VAULT_TAB_ID}),500); } }catch(e){}
+function fechaMs(v){ if(typeof v==='number'&&Number.isFinite(v)) return v; const n=Date.parse(v||''); return Number.isFinite(n)?n:0; }
+function marcaRegistro(v){ if(!v||typeof v!=='object') return 0; return Math.max(fechaMs(v.actualizado),fechaMs(v.actualizada),fechaMs(v.creado),fechaMs(v.creada),fechaMs(v.modificado)); }
+function elegirPorFecha(a,b,ta,tb){ const x=fechaMs(ta), y=fechaMs(tb); if(x!==y) return x>y?a:b; return JSON.stringify(a)>=JSON.stringify(b)?a:b; }
+function prepararMarcasIniciales(s){ const n=normalizarStore(s), ahora=Date.now(); PERFILES.forEach(p=>{ const pid=p.id, m=n.sync.perfiles[pid]; if(!fechaMs(m.perfil)) m.perfil=ahora; ['cvs','seguimiento','manuales','paquetes'].forEach(k=>Object.values(n.perfiles[pid][k]).forEach(v=>{ if(v&&typeof v==='object'&&!marcaRegistro(v)) v.actualizado=new Date(ahora).toISOString(); })); }); if(!fechaMs(n.sync.ia)) n.sync.ia=ahora; return n; }
+function mergeBoveda(local,remoto){
+  const a=normalizarStore(local), b=normalizarStore(remoto), out=normalizarStore(b);
+  out.ia=elegirPorFecha(a.ia,b.ia,a.sync.ia,b.sync.ia);
+  out.sync.ia=Math.max(fechaMs(a.sync.ia),fechaMs(b.sync.ia));
+  PERFILES.forEach(p=>{
+    const pid=p.id, x=a.perfiles[pid], y=b.perfiles[pid], z=out.perfiles[pid], sx=a.sync.perfiles[pid], sy=b.sync.perfiles[pid], sz=out.sync.perfiles[pid];
+    z.perfil=elegirPorFecha(x.perfil,y.perfil,sx.perfil,sy.perfil);
+    sz.perfil=Math.max(fechaMs(sx.perfil),fechaMs(sy.perfil));
+    ['cvs','seguimiento','manuales','paquetes'].forEach(k=>{
+      const am=x[k]||{}, bm=y[k]||{}, merged={};
+      new Set([...Object.keys(am),...Object.keys(bm)]).forEach(id=>{ const av=am[id], bv=bm[id]; merged[id]=!bv?av:!av?bv:elegirPorFecha(av,bv,marcaRegistro(av),marcaRegistro(bv)); });
+      z[k]=merged;
+    });
+    ['cvs','manuales'].forEach(k=>{
+      const del=Object.assign({},sx.borrados[k]||{}); Object.entries(sy.borrados[k]||{}).forEach(([id,t])=>del[id]=Math.max(fechaMs(del[id]),fechaMs(t)));
+      Object.entries(del).forEach(([id,t])=>{ if(fechaMs(t)>=marcaRegistro(z[k][id])) delete z[k][id]; });
+      sz.borrados[k]=del;
+    });
+  });
+  out.migraciones=Array.from(new Set([...(a.migraciones||[]),...(b.migraciones||[])]));
+  return out;
+}
+function bytesB64(bytes){ let bin=''; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000)); return btoa(bin); }
+function b64Bytes(s){ const bin=atob(String(s||'').replace(/\s/g,'')), out=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i); return out; }
+function vaultAAD(){ const gh=ghInfo(); return new TextEncoder().encode('radar-empleo-vault:v1:'+gh.dueno+'/'+gh.repo); }
+async function vaultCryptoKey(password,salt,iterations){ if(!crypto||!crypto.subtle) throw new Error('Este navegador no permite cifrado seguro. Abre la app en Chrome o Edge actualizado.'); const material=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveKey']); return crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt,iterations},material,{name:'AES-GCM',length:256},false,['encrypt','decrypt']); }
+async function cifrarStore(password,store){ const salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12)), key=await vaultCryptoKey(password,salt,VAULT_ITERATIONS), plain=new TextEncoder().encode(JSON.stringify(storeParaBovedaFrom(store))), cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:vaultAAD()},key,plain); return {version:1,kdf:'PBKDF2-SHA-256',iteraciones:VAULT_ITERATIONS,cifrado:'AES-256-GCM',salt:bytesB64(salt),iv:bytesB64(iv),contenido:bytesB64(new Uint8Array(cipher)),actualizado:new Date().toISOString()}; }
+function storeParaBovedaFrom(store){ const s=JSON.parse(JSON.stringify(store)); if(s.ia) s.ia.geminiKey=''; return s; }
+async function descifrarStore(env,password){ if(!env||env.version!==1||env.kdf!=='PBKDF2-SHA-256'||env.cifrado!=='AES-256-GCM') throw new Error('El archivo de la bóveda no tiene un formato reconocido.'); const iter=Number(env.iteraciones); if(!Number.isInteger(iter)||iter<600000||iter>2000000) throw new Error('La configuración de cifrado de la bóveda no es válida.'); const key=await vaultCryptoKey(password,b64Bytes(env.salt),iter); try{ const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64Bytes(env.iv),additionalData:vaultAAD()},key,b64Bytes(env.contenido)); return normalizarStore(JSON.parse(new TextDecoder().decode(plain))); }catch(e){ throw new Error('La contraseña no coincide o el archivo cifrado está dañado.'); } }
+async function githubBoveda(token){ const gh=ghInfo(); if(!gh||gh.dueno!=='lanasmith1299-design'||gh.repo!=='radar-empleo') throw new Error('La bóveda solo funciona desde la página oficial del Radar.'); const url='https://api.github.com/repos/'+encodeURIComponent(gh.dueno)+'/'+encodeURIComponent(gh.repo)+'/contents/'+VAULT_FILE+'?ref='+VAULT_BRANCH, r=await fetch(url,{cache:'no-store',headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}}); if(r.status===404) return {env:null,sha:null}; if(!r.ok) throw new Error(r.status===401?'GitHub no aceptó el token. Revisa que esté vigente.':r.status===403?'GitHub negó el acceso. El token necesita permiso Contents: lectura y escritura para este repositorio.':'No se pudo leer la bóveda de GitHub (HTTP '+r.status+').'); const d=await r.json(); if(d.encoding!=='base64'||!d.content) throw new Error('GitHub devolvió un archivo de bóveda ilegible.'); return {env:JSON.parse(new TextDecoder().decode(b64Bytes(d.content))),sha:d.sha}; }
+async function guardarGithubBoveda(token,env,sha){ const gh=ghInfo(), url='https://api.github.com/repos/'+encodeURIComponent(gh.dueno)+'/'+encodeURIComponent(gh.repo)+'/contents/'+VAULT_FILE, contenido=bytesB64(new TextEncoder().encode(JSON.stringify(env))); const body={message:'Actualizar bóveda cifrada del Radar',content:contenido,branch:VAULT_BRANCH}; if(sha) body.sha=sha; return fetch(url,{method:'PUT',headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},body:JSON.stringify(body)}); }
+async function sincronizarBoveda(enSegundoPlano){
+  if(vaultBusy) return;
+  let guardado=''; try{ guardado=localStorage.getItem(VAULT_TOKEN_KEY)||''; }catch(e){}
+  const cred=(S.d['vault:token']||'').trim()||guardado, password=String(S.d['vault:password']||'').trim()||(S.vault.unlocked?String(S.vault.password||''):'');
+  if(!cred||!password){ if(!enSegundoPlano) toast('Escribe el token de GitHub y una contraseña para sincronizar.','bad'); return; }
+  vaultBusy=true; S.vault.syncing=true; S.vault.error=''; if(S.tab==='perfil') render();
+  try{
+    for(let intento=0;intento<4;intento++){
+      const revInicio=vaultLocalRev, remoto=await githubBoveda(cred), password2=String(S.d['vault:password2']||'').trim(); if(!remoto.env&&password2!==password) throw new Error('La bóveda aún no existe. Escribe la misma contraseña en ambos campos para crearla.'); const local=(remoto.env&&S.storeMissing)?normalizarStore(JSON.parse(JSON.stringify(STORE))):prepararMarcasIniciales(JSON.parse(JSON.stringify(STORE))), cloud=remoto.env?await descifrarStore(remoto.env,password):storeVacio(), combinado=mergeBoveda(local,cloud), env=await cifrarStore(password,combinado), r=await guardarGithubBoveda(cred,env,remoto.sha);
+      if(r.status===409||r.status===422){ if(intento<3) continue; throw new Error('Hubo cambios simultáneos en la bóveda. Pulsa Sincronizar de nuevo en unos segundos.'); }
+      if(!r.ok) throw new Error(r.status===401?'GitHub no aceptó el token. Revisa que esté vigente.':r.status===403?'GitHub negó la escritura. Revisa el permiso Contents del token.':r.status===404?'GitHub no encuentra el repositorio o el token no tiene acceso. Revisa que hayas seleccionado radar-empleo.':'No se pudo guardar la bóveda (HTTP '+r.status+').');
+      if(vaultLocalRev===revInicio){ const keyLocal=STORE.ia.geminiKey; STORE=combinado; STORE.ia.geminiKey=keyLocal; guardarStore(true); S.vault.pending=false; } else programarSyncVault();
+      try{ localStorage.setItem(VAULT_TOKEN_KEY,cred); localStorage.setItem('radar-vault-last-sync',new Date().toISOString()); }catch(e){}
+      S.vault.unlocked=true; S.vault.remoteExists=true; S.vault.password=password; S.vault.lastSync=new Date().toISOString(); S.vault.error=''; S.d['vault:password']=''; S.d['vault:password2']=''; S.d['vault:token']=''; construir(); render();
+      if(!enSegundoPlano) toast('Bóveda sincronizada. Los cambios guardados se subirán automáticamente.');
+      return;
+    }
+  }catch(e){ S.vault.error=String(e.message||e); if(!enSegundoPlano) toast(S.vault.error,'bad'); }
+  finally{ vaultBusy=false; S.vault.syncing=false; if(S.tab==='perfil') render(); }
+}
+function programarSyncVault(){ if(!S.vault.unlocked||!S.vault.password) return; S.vault.pending=true; clearTimeout(vaultTimer); vaultTimer=setTimeout(()=>sincronizarBoveda(true),1800); }
+window.addEventListener('storage',e=>{ if(e.key!==LS_KEY||!e.newValue) return; try{ const merged=mergeBoveda(STORE,JSON.parse(e.newValue)); if(JSON.stringify(merged)!==JSON.stringify(STORE)){ STORE=merged; guardarStore(true); construir(); if(S.ready) render(); } }catch(e){} });
 
 /* ---------- Inteligencia artificial (local, Gemini o copiar y pegar) ---------- */
 function imagenesOk(){ return STORE.ia.modo==='ollama'||STORE.ia.modo==='gemini'; }
@@ -434,8 +517,9 @@ function vShell(){
 function vBanner(){
   if(!S.ready) return '<div class="banner">Cargando…</div>';
   const vacio=S.storeMissing?'<div class="banner">No encontramos datos guardados en este navegador. Si ya habías creado CVs o seguimiento, quizá estaban en otro perfil/dispositivo o se borraron los datos del sitio. Si tienes un respaldo, impórtalo desde Ajustes.</div>':'';
-  if(S.dataError) return vacio+'<div class="banner">Todavía no hay resultados del buscador diario. Cuando corra la primera búsqueda aparecerán aquí. Mientras, puedes agregar vacantes a mano.</div>';
-  return vacio;
+  const vault=S.vault.remoteExists&&!S.vault.unlocked?'<div class="banner">Hay una bóveda cifrada compartida. En Ajustes, conecta este navegador y desbloquéala antes de hacer cambios para cargar el progreso más reciente.</div>':'';
+  if(S.dataError) return vault+vacio+'<div class="banner">Todavía no hay resultados del buscador diario. Cuando corra la primera búsqueda aparecerán aquí. Mientras, puedes agregar vacantes a mano.</div>';
+  return vault+vacio;
 }
 function vVista(){
   switch(S.tab){ case 'postular': return vPostular(); case 'cvs': return vCvs(); case 'evaluaciones': return vEval(); case 'reclutamiento': return vRec(); case 'perfil': return vPerfil(); default: return vVacantes(); }
@@ -447,9 +531,53 @@ function sel(id,opts,val,attrs){ return '<select id="'+id+'" '+(attrs||'')+'>'+o
 /* ---------- Vacantes ---------- */
 function etiquetaEstado(j){ if(j.estado==='pendiente'&&j.auto==='cumple') return 'Cumple tus filtros · falta verificar'; if(j.estado==='pendiente'&&j.auto==='revisar') return 'Revisar'; return ESTADOS[j.estado]||'Sin estado'; }
 function pillClase(j){ if(j.estado==='pendiente'&&j.auto==='cumple') return 'p-acc'; return ESTADO_PILL[j.estado]||'p-mut'; }
+function normalizarTextoUI(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function categoriaExclusion(j){
+  const fallas=(Array.isArray(j.filtro)?j.filtro:[]).filter(x=>x&&x.resultado==='no cumple');
+  const texto=normalizarTextoUI(fallas.map(x=>(x.regla||'')+' '+(x.detalle||'')).join(' ')+(j.motivoEstado||''));
+  const reglas=[
+    ['voz','Voz o llamadas',/voz|llamad|telefono|phone|inbound|outbound|canal/],
+    ['estafa','Pago o señal de estafa',/estafa|pagar|pago ilegal|datos bancarios/],
+    ['pago','Pago bajo',/pago|salario|sueldo|\bus\$|por hora/],
+    ['estudios','Título o licencia',/estudio|titulo|degree|licen[cs]e|credencial|bachelor|master|doctor/],
+    ['ubicacion','No acepta RD',/pais|ubicacion|location|republica dominicana|dominican|\brd\b/],
+    ['puesto','Tipo de puesto',/tipo de puesto|titulo no parece|puesto que buscas/],
+    ['idioma','Idioma requerido',/idioma|language/],
+    ['empresa','Empresa excluida',/empresa excluida|empresa/]
+  ];
+  return reglas.find(x=>x[2].test(texto))?{id:reglas.find(x=>x[2].test(texto))[0],label:reglas.find(x=>x[2].test(texto))[1]}:{id:'otros',label:'Otros motivos'};
+}
+function gruposExclusion(){ const g={}; S.jobs.filter(j=>j.estado==='excluida').forEach(j=>{ const c=categoriaExclusion(j); g[c.id]=g[c.id]||{id:c.id,label:c.label,total:0}; g[c.id].total++; }); return Object.values(g).sort((a,b)=>b.total-a.total); }
+function pagoCompartible(v){ const h=Number(v.pago_min_hora); if(!Number.isFinite(h)) return ''; const mensual=Math.round(h*173.3); return 'Desde aprox. US$'+h.toFixed(1)+'/h (~US$'+mensual.toLocaleString('en-US')+'/mes a tiempo completo)'; }
+function puestoSenior(puesto){ return /\b(senior|sr\.?|lead|manager|director|executive|chief|vp|vice president|head of|principal|supervisor|president)\b/i.test(puesto||''); }
+function vacantesCompartibles(){
+  const all=(S.data&&S.data.vacantes)||[], hoy=new Date();
+  return all.filter(v=>{
+    if(v.descripcion_completa!==true||String(v.descripcion||'').trim().split(/\s+/).filter(Boolean).length<80) return false;
+    const ubic=normalizarTextoUI(v.ubicacion||'');
+    const rdPosible=/(dominican|republica dominicana|worldwide|anywhere|caribbean|latin america|latam|americas)/.test(ubic);
+    const excluyeRD=/(only|excluding|except|not available in|no candidates from).{0,35}(dominican|republica dominicana)/.test(ubic);
+    if(!rdPosible||excluyeRD) return false;
+    const fecha=v.publicada?new Date(v.publicada):null;
+    if(!fecha||isNaN(fecha)||((hoy-fecha)/86400000)>10) return false;
+    const piso=Number(v.pago_min_hora);
+    const umbral=puestoSenior(v.puesto)?15:8;
+    if(!Number.isFinite(piso)||piso<=umbral) return false;
+    return !!safeUrl(v.url);
+  }).sort((a,b)=>(Number(b.pago_min_hora)||0)-(Number(a.pago_min_hora)||0)).slice(0,8);
+}
+function vVacantesCompartibles(){
+  const V=vacantesCompartibles();
+  if(!V.length) return '<section class="card pad"><h2 style="font-size:20px">Vacantes destacadas para compartir</h2><p class="muted small" style="margin:4px 0 0">Por ahora no hay ofertas recientes que cumplan todos los criterios: descripción extensa disponible, pago publicado por encima del umbral y ubicación compatible con RD o una región amplia. “Worldwide” y “LATAM” aún requieren confirmar el país en el anuncio original.</p></section>';
+  const cards=V.map(v=>{ const senior=puestoSenior(v.puesto); const umbral=senior?15:8; const url=safeUrl(v.url); const fecha=v.publicada?fmtFecha(v.publicada):'fecha no indicada'; return '<article class="share-card"><h3>'+esc(v.puesto||'Vacante remota')+'</h3><div class="muted small">'+esc(v.empresa||'Empresa no indicada')+' · '+(senior?'Senior / liderazgo':'Entrada / general')+'</div><div class="small"><strong>'+esc(pagoCompartible(v))+'</strong> · '+esc(v.ubicacion||'Ubicación publicada')+'</div><div class="muted small">Publicada: '+esc(fecha)+' · Umbral: US$'+umbral+'/h</div><div class="share-actions"><a class="btn small" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Abrir anuncio ↗</a><button class="btn small" type="button" data-act="compartirVacante" data-id="'+esc(v.id||'')+'">Compartir</button></div></article>'; }).join('');
+  return '<section class="card pad stack"><div><h2 style="font-size:20px">Vacantes destacadas para compartir</h2><p class="muted small" style="margin:4px 0 0">Ofertas recientes con pago publicado por encima del umbral del nivel. “Remoto” o “LATAM” no confirma por sí solo que acepten desde RD: abre el anuncio y verifica país, requisitos y que siga disponible antes de compartir.</p></div><div class="share-grid">'+cards+'</div></section>';
+}
 function filtrarJobs(){
   const q=S.q.trim().toLowerCase(); let J=S.jobs.slice();
   if(S.filtro==='proceso') J=J.filter(j=>EN_PROCESO.includes(j.etapa)); else if(S.filtro!=='todas') J=J.filter(j=>j.estado===S.filtro);
+  if(S.filtro==='excluida'&&S.razonExclusion) J=J.filter(j=>categoriaExclusion(j).id===S.razonExclusion);
+  if(S.filtro==='pendiente'&&S.filtroPendiente==='alta') J=J.filter(j=>j.auto==='cumple'&&(j.prioridad||9)<=2);
+  if(S.filtro==='pendiente'&&S.filtroPendiente==='dudas') J=J.filter(j=>j.auto==='revisar');
   if(q) J=J.filter(j=>[j.puesto,j.empresa,j.fuente,j.funciones,j.notas].join(' ').toLowerCase().includes(q));
   return J.sort((a,b)=>(a.prioridad||9)-(b.prioridad||9)||String(b.actualizada||'').localeCompare(String(a.actualizada||'')));
 }
@@ -458,13 +586,15 @@ function vVacantes(){
   const tile=(k,l,cls)=>'<button type="button" class="tile" data-act="filtro" data-id="'+k+'" aria-pressed="'+(S.filtro===k)+'"><div class="lbl">'+l+'</div><div class="num '+cls+'">'+c[k]+'</div></button>';
   const J=filtrarJobs(); if(S.selJob&&!J.some(j=>j.id===S.selJob)) S.selJob=null; if(!S.selJob&&J.length&&window.innerWidth>980) S.selJob=J[0].id;
   const chips=[['verificada','Verificadas'],['pendiente','Pendientes'],['excluida','Excluidas'],['proceso','En proceso'],['todas','Todas ('+S.jobs.length+')']].map(x=>'<button type="button" class="chip" data-act="filtro" data-id="'+x[0]+'" aria-pressed="'+(S.filtro===x[0])+'">'+x[1]+'</button>').join('');
+  const subPend=S.filtro==='pendiente'?'<div class="reason-row" aria-label="Subfiltros de revisión"><button class="chip" type="button" data-act="subFiltroPendiente" data-id="todas" aria-pressed="'+(S.filtroPendiente==='todas')+'">Todas ('+c.pendiente+')</button><button class="chip" type="button" data-act="subFiltroPendiente" data-id="alta" aria-pressed="'+(S.filtroPendiente==='alta')+'">Mejor encaje ('+S.jobs.filter(j=>j.estado==='pendiente'&&j.auto==='cumple'&&(j.prioridad||9)<=2).length+')</button><button class="chip" type="button" data-act="subFiltroPendiente" data-id="dudas" aria-pressed="'+(S.filtroPendiente==='dudas')+'">Datos por confirmar ('+S.jobs.filter(j=>j.estado==='pendiente'&&j.auto==='revisar').length+')</button></div>':'';
+  const grupos=gruposExclusion(); const subEx=S.filtro==='excluida'?'<div class="reason-row" aria-label="Causa principal de exclusión"><button class="chip" type="button" data-act="razonExclusion" data-id="" aria-pressed="'+(!S.razonExclusion)+'">Todas ('+c.excluida+')</button>'+grupos.map(g=>'<button class="chip" type="button" data-act="razonExclusion" data-id="'+g.id+'" aria-pressed="'+(S.razonExclusion===g.id)+'">'+esc(g.label)+' ('+g.total+')</button>').join('')+'</div><p class="muted small" style="margin:4px 0 0">Cada vacante se cuenta una vez, por su causa principal.</p>':'';
   let list;
   if(!S.ready) list='<div class="empty">Cargando vacantes…</div>';
   else if(!J.length) list='<div class="empty">'+(S.jobs.length?'Nada en este filtro.':'Todavía no hay vacantes para '+esc(nombreP())+'. La búsqueda diaria las irá agregando, o agrega una con el botón de arriba.')+'</div>';
   else list=J.map(j=>'<button type="button" class="item" data-act="selJob" data-id="'+esc(j.id)+'" aria-current="'+(j.id===S.selJob)+'"><span class="row between"><span class="pill '+pillClase(j)+'">'+esc(etiquetaEstado(j))+'</span><span class="tag">'+(j.carga?'CARGA '+esc(j.carga):'')+'</span></span><span class="t" style="margin-top:6px">'+esc(j.puesto||'(sin título)')+'</span><span class="s">'+esc(j.empresa||'')+(j.pago?' · '+esc(j.pago):'')+'</span><span class="s">'+esc([j.canal==='no-voz'?'No-voz':j.canal, j.prioridad?'Prioridad '+j.prioridad:'', EN_PROCESO.includes(j.etapa)||j.etapa==='rechazada'?ETAPA_LBL[j.etapa]:''].filter(Boolean).join(' · '))+'</span></button>').join('');
   const sj=job(S.selJob);
-  return '<div class="tiles">'+tile('verificada','Verificadas y abiertas','n-ok')+tile('pendiente','Pendientes de verificar','n-warn')+tile('excluida','Excluidas por tus reglas','n-bad')+tile('proceso','Postuladas / en proceso','n-acc')+'</div>'+
-  '<div class="card pad row between"><div class="chips" role="group" aria-label="Filtro">'+chips+'</div><div class="row" style="flex:1; justify-content:flex-end; min-width:260px"><input type="search" id="q" placeholder="Buscar por puesto, empresa o nota" value="'+esc(S.q)+'" data-input="q" style="max-width:320px"><button class="btn primary" type="button" data-act="abrirAgregar">Agregar vacante</button></div></div>'+
+  return vVacantesCompartibles()+'<div class="tiles">'+tile('verificada','Verificadas y abiertas','n-ok')+tile('pendiente','Pendientes de verificar','n-warn')+tile('excluida','Excluidas por tus reglas','n-bad')+tile('proceso','Postuladas / en proceso','n-acc')+'</div>'+
+  '<div class="card pad"><div class="row between"><div class="chips" role="group" aria-label="Filtro">'+chips+'</div><div class="row" style="flex:1; justify-content:flex-end; min-width:260px"><input type="search" id="q" placeholder="Buscar por puesto, empresa o nota" value="'+esc(S.q)+'" data-input="q" style="max-width:320px"><button class="btn primary" type="button" data-act="abrirAgregar">Agregar vacante</button></div></div>'+subPend+subEx+'</div>'+
   '<div class="split"><div class="list" data-keep="jobs">'+list+'</div><div>'+(sj?vJob(sj):'<div class="empty">Elige una vacante para ver su ficha.</div>')+'</div></div>'+
   '<p class="muted small" style="margin:0">'+(S.data&&S.data.actualizado?'Búsqueda del '+esc(new Date(S.data.actualizado).toLocaleString("es-DO",{timeZone:"America/Santo_Domingo",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}))+'. ':'')+'Vacantes de <a href="https://remotive.com" target="_blank" rel="noopener">Remotive</a>, <a href="https://himalayas.app" target="_blank" rel="noopener">Himalayas</a>, <a href="https://jobicy.com" target="_blank" rel="noopener">Jobicy</a>, <a href="https://remoteok.com" target="_blank" rel="noopener">Remote OK</a>, <a href="https://weworkremotely.com" target="_blank" rel="noopener">We Work Remotely</a>, <a href="https://www.workingnomads.com" target="_blank" rel="noopener">Working Nomads</a> y la agencia <a href="https://saganrecruitment.com" target="_blank" rel="noopener">Sagan Recruitment</a>. Cada una enlaza a su fuente.</p>';
 }
@@ -485,6 +615,8 @@ function vJob(j){
   '<div class="row">'+(url?'<a class="btn primary" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Abrir vacante original ↗</a>':'<span class="muted small">Sin enlace guardado</span>')+'<button class="btn" type="button" data-act="copiarFicha" data-id="'+esc(j.id)+'">Copiar 20 campos</button><button class="btn" type="button" data-act="irPostular" data-id="'+esc(j.id)+'">Preparar postulación</button></div>'+
   '<div class="grid2"><label class="f" for="estado-'+esc(j.id)+'">Estado'+sel('estado-'+j.id,Object.entries(ESTADOS),j.estado,'data-change="estado" data-id="'+esc(j.id)+'"')+'</label><label class="f" for="etapa-'+esc(j.id)+'">Mi seguimiento'+sel('etapa-'+j.id,ETAPAS,j.etapa||'por_revisar','data-change="etapa" data-id="'+esc(j.id)+'"')+'</label></div>'+
   (j.estado!=='verificada'?'<div class="note">Márcala como <strong>Verificada y abierta</strong> solo después de abrir el anuncio original y ver el formulario de aplicación funcionando. Una copia en otro portal no cuenta.</div>':'')+
+  (j.descripcionCompleta===false?'<div class="note">La búsqueda no confirmó que el texto guardado esté completo. Se mantiene para revisar; abre el anuncio original y confirma todos los requisitos antes de considerarla.</div>':'')+
+  (j.descripcionTruncada?'<div class="note">El texto guardado se acortó. Abre el anuncio original para consultar las partes que no aparecen aquí.</div>':'')+
   '<label class="f" for="notas-'+esc(j.id)+'">Notas<textarea id="notas-'+esc(j.id)+'" data-bind="notas:'+esc(j.id)+'" placeholder="Qué falta confirmar, con quién hablaste, fechas…">'+esc(dv('notas:'+j.id,j.notas||''))+'</textarea></label><div class="row"><button class="btn small" type="button" data-act="guardarNotas" data-id="'+esc(j.id)+'">Guardar notas</button></div>'+
   '<dl class="ficha">'+fic+'</dl>'+
   (Array.isArray(j.filtro)&&j.filtro.length?'<details open><summary>Cómo cumple las reglas de '+esc(nombreP())+'</summary><div style="margin-top:8px">'+vFiltro(j.filtro)+'</div></details>':'')+
@@ -648,7 +780,8 @@ function vPerfil(){
     '<ol class="small" style="margin:0; padding-left:18px"><li>Instala Ollama desde ollama.com y en PowerShell escribe <code>ollama pull '+esc(ia.modelo||'qwen3.5')+'</code>.</li><li>Permite esta página: en PowerShell escribe <code>setx OLLAMA_ORIGINS "'+esc(origen)+'"</code>. Después cierra Ollama (icono junto al reloj → Quit) y ábrelo otra vez.</li><li>Usa esta app en Chrome o Edge en esa misma PC. Si el navegador pregunta si permites el acceso a dispositivos de tu red local, acepta.</li></ol></div>':'')+
   (ia.modo==='gemini'?'<div class="card pad stack" style="box-shadow:none; background:var(--surface-2)"><div class="grid2"><label class="f" for="ia-key">Clave de Gemini<input type="password" id="ia-key" data-bind="ia:geminiKey" value="'+esc(dv('ia:geminiKey',ia.geminiKey))+'" autocomplete="off"></label><label class="f" for="ia-gm">Modelo<input type="text" id="ia-gm" data-bind="ia:geminiModelo" value="'+esc(dv('ia:geminiModelo',ia.geminiModelo))+'"></label></div><div class="row"><button class="btn" type="button" data-act="guardarIA">Guardar</button></div><p class="muted small" style="margin:0">La clave se consigue gratis en aistudio.google.com y se guarda solo en este dispositivo. No se incluye en los respaldos.</p></div>':'')+
   '</section>'+
-  '<section class="card pad stack"><h2 style="font-size:20px">Respaldo</h2><p class="muted small" style="margin:0">Tus CVs, notas y seguimiento se guardan solo en este dispositivo y navegador. Exporta un respaldo después de importar o editar un CV y cuando actualices tu seguimiento; guárdalo en una carpeta privada.</p><p class="muted small" style="margin:0">'+mensajeAlmacenamiento()+'</p><div class="row"><button class="btn" type="button" data-act="exportar">Exportar respaldo</button><label class="btn" for="imp-file">Importar respaldo<input type="file" id="imp-file" accept="application/json,.json" data-change="importar" hidden></label></div></section>'+
+  '<section class="card pad stack"><h2 style="font-size:20px">Sincronización entre dispositivos</h2><p class="muted small" style="margin:0">Tus CVs, perfiles y seguimiento se cifran antes de guardarse en el repositorio público. La contraseña nunca se guarda ni se envía: recuérdala. Si la olvidas, no podremos recuperar la bóveda. Recomendación: 5 palabras al azar; se exigen al menos 4 palabras y 20 caracteres.</p><p class="muted small" style="margin:0">El token de GitHub se guarda en este navegador para sincronizar después de cada cambio. Limítalo al repositorio radar-empleo y al permiso Contents: lectura y escritura; no lo pegues en este chat. Ponle vencimiento (por ejemplo, 30 días) y revócalo en GitHub si dejas de usar este dispositivo.</p><ol class="small" style="margin:0;padding-left:20px"><li>Al crear el token, elige acceso a repositorios seleccionados y marca solo radar-empleo.</li><li>En permisos del repositorio, Contents: Read and write.</li><li>Configura vencimiento y copia el token una sola vez; pégalo en este campo, nunca en el chat.</li></ol><label class="f" for="vault-password">Contraseña de la bóveda<input type="password" id="vault-password" data-bind="vault:password" autocomplete="new-password" placeholder="Escribe tu contraseña de 4 o 5 palabras"></label><label class="f" for="vault-password2">Confirma la contraseña (solo al crear la bóveda)<input type="password" id="vault-password2" data-bind="vault:password2" autocomplete="new-password" placeholder="Repite la contraseña para crearla"></label><label class="f" for="vault-token">Token de GitHub '+(tokenBovedaGuardado()?'guardado aquí; escribe otro para reemplazarlo':'')+'<input type="password" id="vault-token" data-bind="vault:token" autocomplete="off" placeholder="github_pat_…"></label><div class="row"><button class="btn primary" type="button" data-act="vaultSync" '+(S.vault.syncing?'disabled':'')+'>'+(S.vault.unlocked?'Sincronizar ahora':'Desbloquear y sincronizar')+'</button>'+(S.vault.unlocked?'<button class="btn" type="button" data-act="vaultLock">Bloquear bóveda</button>':'')+'<a class="btn" href="https://github.com/settings/personal-access-tokens/new?type=beta" target="_blank" rel="noopener noreferrer">Crear token limitado ↗</a></div><p class="muted small" style="margin:0">'+(S.vault.syncing?'Sincronizando…':S.vault.pending?'Hay cambios por sincronizar. Mantén esta pestaña abierta hasta que termine.':S.vault.unlocked?'Bóveda desbloqueada. Los cambios guardados se sincronizan automáticamente.':'La bóveda está bloqueada. Escribe la contraseña para cargar tus datos más recientes.')+(S.vault.lastSync?' Última sincronización: '+esc(new Date(S.vault.lastSync).toLocaleString('es-DO',{dateStyle:'medium',timeStyle:'short'}))+'.':tokenBovedaGuardado()?'':' Aún no está conectada.')+'</p>'+(S.vault.otherTabs?'<div class="note">Hay otra pestaña del Radar abierta. Evita editar el mismo registro a la vez; al sincronizar, la app combina los cambios con la versión más reciente.</div>':'')+(S.vault.error?'<div class="note" role="alert">'+esc(S.vault.error)+'</div>':'')+'</section>'+ 
+  '<section class="card pad stack"><h2 style="font-size:20px">Respaldo</h2><p class="muted small" style="margin:0">Tus datos se guardan en este navegador y, si conectas la bóveda, también se sincronizan cifrados. Mantén un respaldo local periódico por si olvidas la contraseña o pierdes acceso a GitHub.</p><p class="muted small" style="margin:0">'+mensajeAlmacenamiento()+'</p><div class="row"><button class="btn" type="button" data-act="exportar">Exportar respaldo</button><label class="btn" for="imp-file">Importar respaldo<input type="file" id="imp-file" accept="application/json,.json" data-change="importar" hidden></label></div></section>'+
   '<section class="card pad stack"><h2 style="font-size:20px">Buscador diario</h2><p style="margin:0">'+(S.data&&S.data.actualizado?'Última búsqueda: '+esc(new Date(S.data.actualizado).toLocaleString('es-DO',{timeZone:'America/Santo_Domingo',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'})):'Todavía no ha corrido.')+'</p>'+fuentes+
   (gh?'<div class="row"><a class="btn" href="'+esc(gh.base)+'/actions/workflows/buscar.yml" target="_blank" rel="noopener">Buscar ahora (en GitHub) ↗</a><a class="btn" href="'+esc(gh.base)+'/edit/main/config/perfiles.json" target="_blank" rel="noopener">Editar reglas del buscador ↗</a></div><p class="muted small" style="margin:0">Para buscar ahora: en GitHub pulsa "Run workflow". Tarda unos minutos.</p>':'')+
   '</section></div></div>';
@@ -658,8 +791,15 @@ function vPerfil(){
 const ACT={
   perfil(el){ if(el.dataset.id===S.pid) return; S.pid=el.dataset.id; ls('pid',S.pid); Object.assign(S,{selJob:null,selCv:null,post:{jobId:null,cvId:null},rec:{jobId:null,tipo:'entrevista'},ev:{turns:[],files:[]},d:{}}); suscribir(); render(); },
   tab(el){ S.tab=el.dataset.id; ls('tab',S.tab); try{ history.replaceState(null,'','#'+S.tab); }catch(e){} render(); window.scrollTo(0,0); },
-  filtro(el){ S.filtro=el.dataset.id; S.selJob=null; render(); },
+  filtro(el){ S.filtro=el.dataset.id; S.selJob=null; if(S.filtro!=='excluida') S.razonExclusion=''; if(S.filtro!=='pendiente') S.filtroPendiente='alta'; render(); },
+  razonExclusion(el){ S.razonExclusion=el.dataset.id||''; S.selJob=null; render(); },
+  subFiltroPendiente(el){ S.filtroPendiente=el.dataset.id||'todas'; S.selJob=null; render(); },
   selJob(el){ S.selJob=el.dataset.id; render(); if(window.innerWidth<=980){ const a=$('article.card'); if(a) a.scrollIntoView({block:'start'}); } },
+  async compartirVacante(el){
+    const v=((S.data&&S.data.vacantes)||[]).find(x=>String(x.id||'')===String(el.dataset.id||'')); if(!v) return;
+    const url=safeUrl(v.url); const texto=[(v.puesto||'Vacante remota')+(v.empresa?' — '+v.empresa:''),'Remoto: '+(v.ubicacion||'ubicación por confirmar'),v.pago_texto||'',pagoCompartible(v),url,'Confirma que acepten candidatos desde República Dominicana y que siga abierta.'].filter(Boolean).join('\n');
+    if(navigator.share){ try{ await navigator.share({title:v.puesto||'Vacante remota',text: texto,url}); }catch(e){ if(e&&e.name!=='AbortError') copiar(texto); } } else copiar(texto);
+  },
   parar(el){ const b=S.busy[el.dataset.key]; if(b) b.ctl.abort(); },
   copiarFicha(el){ const j=job(el.dataset.id); if(j) copiar(fichaTexto(j)); },
   irPostular(el){ S.post.jobId=el.dataset.id; S.tab='postular'; ls('tab','postular'); render(); window.scrollTo(0,0); },
@@ -733,10 +873,12 @@ const ACT={
     try{ const res=await S.mcp.callTool('Gmail','search_threads',{query:'"'+emp+'" newer_than:120d',pageSize:10,view:'THREAD_VIEW_SUMMARY'}); const pl=res&&res.payload; const th=(pl&&(pl.threads||pl.thread))||[]; S.gmail[j.id]={items:(Array.isArray(th)?th:[]).map(t=>{ const m=(t.messages&&t.messages[0])||{}; return {subject:m.subject||t.subject,snippet:m.snippet||t.snippet,sender:m.sender||'',date:m.date||'',url:t.viewUrl||m.viewUrl}; })}; }
     catch(e){ const c=e&&e.code; S.gmail[j.id]={error:{needs_reauth:'Tu conexión con Gmail venció. Reconéctala en claude.ai → Ajustes → Conectores.',server_not_connected:'Gmail no está conectado en esta cuenta. Agrégalo en claude.ai → Ajustes → Conectores.',not_in_manifest:'No le diste permiso a la app para usar Gmail.',approval_required:'Hace falta tu aprobación para usar Gmail. Vuelve a pulsar el botón y acepta.',selection_required:'Elige cuál conexión de Gmail usar cuando claude.ai te lo pregunte.',blocked_by_policy:'Tu organización bloquea esta herramienta de Gmail.'}[c]||'No se pudo consultar Gmail ahora. Intenta de nuevo en un momento.'}; }
     render(); },
-  guardarPerfil(){ const patch={}; ['nombre','titular','reglas','hechos'].forEach(k=>{ if(('pf:'+k) in S.d) patch[k]=String(S.d['pf:'+k]); }); ['pagoMin','pagoMax'].forEach(k=>{ if(('pf:'+k) in S.d){ const n=parseFloat(S.d['pf:'+k]); patch[k]=isNaN(n)?null:n; } }); if(!Object.keys(patch).length){ toast('No hay cambios que guardar.'); return; } Object.assign(PS().perfil,patch); Object.keys(S.d).filter(k=>k.startsWith('pf:')).forEach(k=>delete S.d[k]); cambiado(); toast('Perfil guardado.'); },
-  guardarIA(){ ['ollamaUrl','modelo','geminiKey','geminiModelo'].forEach(k=>{ if(('ia:'+k) in S.d){ STORE.ia[k]=String(S.d['ia:'+k]).trim(); delete S.d['ia:'+k]; } }); guardarStore(); render(); toast('Ajustes de IA guardados.'); },
+  guardarPerfil(){ const patch={}; ['nombre','titular','reglas','hechos'].forEach(k=>{ if(('pf:'+k) in S.d) patch[k]=String(S.d['pf:'+k]); }); ['pagoMin','pagoMax'].forEach(k=>{ if(('pf:'+k) in S.d){ const n=parseFloat(S.d['pf:'+k]); patch[k]=isNaN(n)?null:n; } }); if(!Object.keys(patch).length){ toast('No hay cambios que guardar.'); return; } Object.assign(PS().perfil,patch); STORE.sync.perfiles[S.pid].perfil=Date.now(); Object.keys(S.d).filter(k=>k.startsWith('pf:')).forEach(k=>delete S.d[k]); cambiado(); toast('Perfil guardado.'); },
+  guardarIA(){ ['ollamaUrl','modelo','geminiKey','geminiModelo'].forEach(k=>{ if(('ia:'+k) in S.d){ STORE.ia[k]=String(S.d['ia:'+k]).trim(); delete S.d['ia:'+k]; } }); STORE.sync.ia=Date.now(); guardarStore(); render(); toast('Ajustes de IA guardados.'); },
   async probarOllama(){ ACT.guardarIA(); const url=String(STORE.ia.ollamaUrl||'').replace(/\/+$/,''); try{ const r=await fetch(url+'/api/tags'); if(!r.ok) throw new Error('HTTP '+r.status); const d=await r.json(); const ms=(d.models||[]).map(m=>m.name); toast(ms.length?'Conectado. Modelos instalados: '+ms.join(', '):'Conectado, pero no hay modelos instalados. Escribe ollama pull '+STORE.ia.modelo+' en PowerShell.'); }catch(e){ toast('No se pudo conectar con Ollama en '+url+'. Revisa que esté abierto y que OLLAMA_ORIGINS permita esta página.','bad'); } },
   exportar(){ exportarRespaldo(); },
+  async vaultSync(){ const password=String(dv('vault:password')|| (S.vault.unlocked?S.vault.password:'') ||'').trim(); if((password.split(/\s+/).filter(Boolean).length<4||password.length<20)){ toast('Usa 4 o 5 palabras y al menos 20 caracteres. No podremos recuperarla si la olvidas.','bad'); return; } S.vault.password=password; await sincronizarBoveda(false); },
+  vaultLock(){ clearTimeout(vaultTimer); S.vault.password=null; S.vault.unlocked=false; S.vault.error=''; S.d['vault:password']=''; S.d['vault:password2']=''; render(); toast('Bóveda bloqueada en esta pestaña.'); },
   copiarPrompt(){ if(S.copiar) copiar(S.copiar.prompt); },
   usarRespuesta(){ const t=String(dv('copiar:resp')).trim(); if(!t){ toast('Pega primero la respuesta de la IA.','bad'); return; } delete S.d['copiar:resp']; cerrarCopiar(t); },
   cancelarCopiar(){ cerrarCopiar(null); },
@@ -747,7 +889,7 @@ const CHANGE={
   postJob(el){ S.post.jobId=el.value; render(); }, postCv(el){ S.post.cvId=el.value; render(); },
   async check(el){ const j=job(S.post.jobId); if(!j) return; const k=el.dataset.k, v=el.checked; const pk=await paquete(j.id); const ck=Object.assign({},pk.check||{},{[k]:v}); guardarPaquete(j.id,{check:ck}).catch(()=>{}); },
   evFile(el){ agregarImgs(Array.from(el.files||[])); el.value=''; },
-  iaModo(el){ STORE.ia.modo=el.value; guardarStore(); render(); },
+  iaModo(el){ STORE.ia.modo=el.value; STORE.sync.ia=Date.now(); guardarStore(); render(); },
   importar(el){ const f=el.files&&el.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>importarRespaldo(String(r.result)); r.readAsText(f); el.value=''; }
 };
 
@@ -782,7 +924,7 @@ function armarJob(r,x){
 }
 function extrasAdd(){ return {url:String(dv('add:url')).trim(),fuente:String(dv('add:fuente')).trim(),li:String(dv('add:li')).trim(),texto:String(dv('add:texto'))}; }
 function promptAdaptar(j,c){
-  return 'Adapta el CV BASE de '+nombreP()+' a esta VACANTE para pasar filtros ATS y convencer a un reclutador.\n\n'+HONESTIDAD+'\n\n'+ctxPerfil()+'\n\nVACANTE:\n'+txtVacante(j)+'\n\nCV BASE:\n'+c.contenido+'\n\nINSTRUCCIONES:\n- Escribe el CV en el idioma de la vacante (en inglés si el anuncio está en inglés).\n- Usa exactamente este formato de marcas: "# Nombre"; una línea de titular; una línea de contacto; "## SECCIÓN"; "### Cargo — Empresa"; una línea con fechas y lugar; viñetas con "- "; **negritas** solo en etiquetas de habilidades.\n- Titular y resumen orientados a este puesto; habilidades ordenadas por relevancia; en cada empleo, primero las viñetas que más se relacionan con la vacante. Conserva todos los empleos, fechas y la educación.\n- Máximo 2 páginas. Sin tablas, columnas ni emojis.\n\nResponde exactamente con estas 4 partes y nada más:\n===CV===\n(el CV adaptado)\n===CAMBIOS===\n(3 a 6 viñetas en español: qué cambiaste y por qué)\n===PALABRAS CLAVE===\nCubiertas: …\nFaltan (no se agregaron porque no son ciertas): …\n===BRECHAS===\n(viñetas en español: requisitos que no cumple y cómo responder con honestidad si se los preguntan)';
+  return 'Adapta el CV BASE de '+nombreP()+' a esta VACANTE para que sea claro para un ATS y para una persona reclutadora. No prometas que pasará todos los filtros.\n\n'+HONESTIDAD+'\n\n'+ctxPerfil()+'\n\nVACANTE (separa requisitos obligatorios de deseables. Si la ficha indica que no se confirmó el texto completo, no asegures que revisaste todo: adapta solo a lo visible y advierte que falta revisar el anuncio original):\n'+txtVacante(j)+'\n\nCV BASE:\n'+c.contenido+'\n\nINSTRUCCIONES:\n- Escribe el CV en el idioma del anuncio.\n- Antes de redactar, identifica las frases clave exactas de la vacante y clasifícalas como obligatorias o deseables. Prioriza tareas, herramientas, credenciales, idiomas y años de experiencia.\n- Incorpora una palabra o frase clave en el CV solo si el CV o los DATOS VERDADEROS prueban esa experiencia. Conserva términos exactos del anuncio cuando sean verídicos; usa sinónimos naturales cuando ayuden. No amontones palabras clave ni añadas una lista oculta.\n- Usa formato ATS sencillo: una columna, encabezados de sección estándar, texto seleccionable, cargos/empresas/fechas claros, viñetas simples y siglas acompañadas por su nombre completo la primera vez. Sin tablas, columnas, iconos, emojis, gráficos ni encabezados decorativos.\n- Ajusta titular, resumen y orden de habilidades al puesto; prioriza viñetas relevantes dentro de cada empleo sin cambiar cargos, empresas, fechas, cifras ni nivel de responsabilidad. Conserva todos los empleos, las fechas y la educación.\n- Máximo 2 páginas. No elimines experiencia solo para elevar una puntuación.\n- Al final, compara el resultado contra los requisitos y enumera con honestidad las palabras clave cubiertas y las que faltan.\n\nResponde exactamente con estas 4 partes y nada más:\n===CV===\n(el CV adaptado)\n===CAMBIOS===\n(3 a 6 viñetas en español: qué cambiaste y por qué)\n===PALABRAS CLAVE===\nObligatorias cubiertas: …\nObligatorias faltantes: …\nDeseables cubiertas: …\nDeseables faltantes: …\n===BRECHAS===\n(requisitos que no cumple y cómo responder con honestidad si se los preguntan)';
 }
 function promptVariante(c,enfoque){
   return 'Crea una versión del CV de '+nombreP()+' enfocada en: '+enfoque+'.\n\n'+HONESTIDAD+'\n\n'+ctxPerfil()+'\n\nCV BASE:\n'+c.contenido+'\n\nINSTRUCCIONES: mismo idioma del CV base; mismo formato de marcas ("# Nombre", titular, contacto, "## SECCIÓN", "### Cargo — Empresa", línea de fechas, viñetas "- ", **negritas** solo en etiquetas). Titular, resumen y habilidades orientados al enfoque; en cada empleo primero las viñetas relacionadas. Conserva todos los empleos, fechas y la educación. Máximo 2 páginas.\n\nResponde exactamente con:\n===CV===\n(el CV)\n===CAMBIOS===\n(3 a 5 viñetas en español)';
@@ -827,6 +969,7 @@ async function iniciar(){
   construir(); render();
   try{ const r=await fetch('data/vacantes.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); S.data=await r.json(); }
   catch(e){ S.dataError=String(e.message||e); }
+  try{ const r=await fetch('data/boveda.json?t='+Date.now(),{cache:'no-store'}); S.vault.remoteExists=r.ok; }catch(e){}
   S.ready=true; construir(); render();
 }
 iniciar();
