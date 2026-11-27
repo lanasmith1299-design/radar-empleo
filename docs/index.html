@@ -487,6 +487,7 @@ function mensajeErrorLoteIA(e){
     if(e.status) return 'Ollama rechazó el análisis (HTTP '+e.status+')'+(detalle?': '+detalle:'');
     return 'No se pudo completar la solicitud a Ollama. Revisa que siga abierto y prueba de nuevo.'+(detalle?' Detalle: '+detalle:'');
   }
+  if(e&&(/fetch/i.test(String(e.message||''))||e.name==='TypeError')) return 'El navegador no pudo enviar el análisis a Ollama. Revisa la conexión local y vuelve a probar.';
   if(e&&e.tipo==='formato') return 'Ollama respondió, pero el resultado no llegó en formato JSON válido.';
   return 'La IA no pudo completar el análisis'+(e&&e.message?': '+String(e.message).slice(0,180):'.');
 }
@@ -822,7 +823,7 @@ const ACT={
     for(let i=0;i<candidatos.length;i++){
       if(S.batch.cancelled||S.pid!==pid) break;
       const j=candidatos[i], key='lote:'+pid+':'+j.id; S.batch.current=j.puesto||j.empresa||'Vacante'; S.batch.currentKey=key; render();
-      let r=null; try{ r=await preguntar(key,promptTriageLocal(j,pid),{json:true,propagarError:true}); }catch(e){ error=mensajeErrorLoteIA(e); failedJob=S.batch.current; } S.batch.currentKey='';
+      let r=null; try{ r=await preguntar(key,promptTriageLocal(j,pid),{json:true,propagarError:true}); }catch(e){ if(!(e&&e.name==='AbortError')){ error=mensajeErrorLoteIA(e); failedJob=S.batch.current; } } S.batch.currentKey='';
       if(S.batch.cancelled||S.pid!==pid) break;
       if(error||!r||typeof r!=='object'){ if(!error){ error=mensajeErrorLoteIA({tipo:'formato'}); failedJob=S.batch.current; } break; }
       const cita=String(r.evidencia_literal||'').trim(), decision=String(r.decision||'').toLowerCase(), regla=String(r.regla||'Incumplimiento de regla').slice(0,120), motivo=String(r.motivo||'Incumplimiento detectado por IA local').slice(0,240);
